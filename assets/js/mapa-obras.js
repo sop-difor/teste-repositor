@@ -1244,6 +1244,14 @@ document.getElementById('crumb').addEventListener('keydown',e=>activateOnKey(e,'
 // de câmera; agora, 1). Reaproveita rankRows()/.rrow — mesmo HTML/clique/teclado dos
 // rankings que já existem no painel — em vez de um componente novo.
 const _crumbPop=document.getElementById('crumbPop');
+// #mapWrap tem transform:scale(...) o tempo todo (intro do mapa — mesmo depois de
+// terminar, ".in" deixa "scale(1)", não "none") — isso vira o containing block de
+// qualquer descendente position:fixed, então um fixed aqui NÃO fica relativo à
+// viewport como o nome sugere, fica relativo ao #mapWrap. Resolvido usando
+// position:absolute (ver CSS) de propósito, com as coordenadas convertidas pra esse
+// referencial — window.innerWidth/innerHeight continuam sendo a régua certa pra
+// decidir "cabe na tela", só a atribuição final que precisa do offset do wrap.
+const _mapWrapEl=document.getElementById('mapWrap');
 function isSiblingPopoverOpen(){ return _crumbPop.classList.contains('show'); }
 function closeSiblingPopover(){ _crumbPop.classList.remove('show'); }
 function openSiblingPopover(anchorEl){
@@ -1254,27 +1262,98 @@ function openSiblingPopover(anchorEl){
   if(st.level===2){ title=st.method==='do'?'Outros distritos':'Outras regiões'; entries=groupEntries().filter(e=>String(e.k)!==String(st.group)); kind='group'; }
   else if(st.level===3){ title='Outros municípios'; entries=cityEntries(idsOfGroup(gidOf(st.city)),true).filter(e=>String(e.k)!==String(st.city)); kind='city'; }
   else return;
-  _crumbPop.innerHTML=`<div class="sec-h"><span>${title}</span><span>${entries.length}</span></div>`
-    +(entries.length?rankRows(entries,kind):'<div class="msel-empty">Nenhum resultado neste recorte</div>');
-  // position:fixed posicionado por JS (não CSS puro): o gatilho não é o pai direto do
-  // popover no DOM (fica fora de #crumb, que reconstrói o innerHTML a cada render() —
-  // um filho fixo ali seria apagado a cada navegação), e a trilha muda de largura/
-  // posição conforme o nome do grupo/município, então o cálculo tem que ser dinâmico.
-  const r=anchorEl.getBoundingClientRect();
-  _crumbPop.style.left=Math.max(8,Math.min(window.innerWidth-268,r.left+r.width/2-130))+'px';
-  _crumbPop.style.top=(r.bottom+8)+'px';
+  // .pop-body é a única parte que rola — o cabeçalho (também a alça de arrasto) e
+  // a alça de resize ficam FORA dela de propósito, senão sumiriam de vista assim
+  // que o usuário rolasse até o fim da lista de irmãos.
+  _crumbPop.innerHTML=`<div class="sec-h" title="Arraste para mover"><span>${title}</span><span>${entries.length}</span></div>`
+    +`<div class="pop-body">`+(entries.length?rankRows(entries,kind):'<div class="msel-empty">Nenhum resultado neste recorte</div>')+`</div>`
+    +`<div class="resize-grip" title="Arraste para redimensionar"></div>`;
+  // o gatilho não é o pai direto do popover no DOM (fica fora de #crumb, que
+  // reconstrói o innerHTML a cada render() — um filho ali seria apagado a cada
+  // navegação), e a trilha muda de largura/posição conforme o nome do grupo/
+  // município, então o cálculo de onde abrir tem que ser dinâmico.
+  // "show" entra ANTES de medir a largura: o popover é redimensionável (pedido do
+  // usuário) e o tamanho escolhido numa abertura anterior persiste — com
+  // display:none, offsetWidth sempre devolveria 0, e o clamp usaria um número
+  // errado (a versão antiga usava a largura padrão fixa, ficava errada assim que
+  // alguém arrastava o canto pra deixar mais largo).
   _crumbPop.classList.add('show');
+  const wrapRect=_mapWrapEl.getBoundingClientRect();
+  const r=anchorEl.getBoundingClientRect();
+  const popW=_crumbPop.offsetWidth;
+  const leftVp=Math.max(8,Math.min(window.innerWidth-popW-8,r.left+r.width/2-popW/2));
+  _crumbPop.style.left=(leftVp-wrapRect.left)+'px';
+  _crumbPop.style.top=(r.bottom+8-wrapRect.top)+'px';
+  // clamp vertical contra a viewport de verdade (não o #mapWrap, que em telas
+  // estreitas — layout empilhado, mapa só com 56vh — é bem mais baixo que a tela
+  // toda) — popover ficou mais alto (pedido do usuário), sem isso ele passava a
+  // renderizar parcialmente fora da área visível.
+  const popRect=_crumbPop.getBoundingClientRect();
+  if(popRect.bottom>window.innerHeight-8){
+    const topVp=Math.max(8,window.innerHeight-8-popRect.height);
+    _crumbPop.style.top=(topVp-wrapRect.top)+'px';
+  }
 }
 _crumbPop.addEventListener('click',e=>{
+  if(_crumbPop.dataset.dragged==='1'){ delete _crumbPop.dataset.dragged; return; } // clique no fim de um arrasto não deve navegar
   const rr=e.target.closest('.rrow'); if(!rr) return;
   closeSiblingPopover();
   goRrow(rr);
 });
 _crumbPop.addEventListener('keydown',e=>activateOnKey(e,'.rrow'));
+// arrasto (mover, pela alça do título) e redimensionar (pela alça .resize-grip no
+// canto) — pedido do usuário. Tentamos primeiro a propriedade CSS resize: nativa,
+// mas ela se mostrou pouco confiável bem no canto arredondado do popover (o alvo de
+// arrasto do navegador fica menor que a área visível ali, e um clique um pouco fora
+// do ponto exato virava "clique fora fecha" em vez de redimensionar) — daí a alça
+// própria, com uma área de agarrar previsível.
+let _popDrag=null, _popResize=null;
+// limites em sincronia com min-width/min-height/max-width/max-height de .crumb-pop
+// no CSS — CSS não tem como impor esses limites num resize feito via JS puro
+// (só existe pra "resize:both" nativo), então o clamp é feito aqui também.
+const POP_MIN_W=260,POP_MIN_H=160,POP_MAX_W=560,POP_MAX_H=560;
+_crumbPop.addEventListener('mousedown',e=>{
+  if(e.target.closest('.resize-grip')){
+    _popResize={startW:_crumbPop.offsetWidth,startH:_crumbPop.offsetHeight,startX:e.clientX,startY:e.clientY};
+    e.preventDefault();
+    return;
+  }
+  const handle=e.target.closest('.sec-h'); if(!handle) return;
+  const wrapRect=_mapWrapEl.getBoundingClientRect();
+  const popRect=_crumbPop.getBoundingClientRect();
+  _popDrag={dx:e.clientX-popRect.left,dy:e.clientY-popRect.top,wrapRect,moved:false};
+  e.preventDefault(); // evita selecionar texto durante o arrasto
+});
+document.addEventListener('mousemove',e=>{
+  if(_popResize){
+    const {startW,startH,startX,startY}=_popResize;
+    _crumbPop.style.width=Math.max(POP_MIN_W,Math.min(POP_MAX_W,startW+(e.clientX-startX)))+'px';
+    _crumbPop.style.height=Math.max(POP_MIN_H,Math.min(POP_MAX_H,startH+(e.clientY-startY)))+'px';
+    return;
+  }
+  if(!_popDrag) return;
+  _popDrag.moved=true;
+  const {dx,dy,wrapRect}=_popDrag;
+  const maxLeft=Math.max(4,wrapRect.width-_crumbPop.offsetWidth-4);
+  const maxTop=Math.max(4,wrapRect.height-_crumbPop.offsetHeight-4);
+  _crumbPop.style.left=Math.max(4,Math.min(maxLeft,e.clientX-wrapRect.left-dx))+'px';
+  _crumbPop.style.top=Math.max(4,Math.min(maxTop,e.clientY-wrapRect.top-dy))+'px';
+});
+document.addEventListener('mouseup',()=>{
+  if(_popResize){ _popResize=null; _crumbPop.dataset.dragged='1'; return; } // mesma supressão do click final usada no arrasto
+  if(_popDrag && _popDrag.moved) _crumbPop.dataset.dragged='1'; // suprime o click subsequente no mouseup do arrasto
+  _popDrag=null;
+});
 // clique fora fecha (mesmo padrão do .msel de filtros); clique EM CIMA do próprio
 // gatilho não conta como "fora" — senão o toggle do handler de #crumb abriria e este
 // listener fecharia de volta no mesmo clique, e o popover nunca apareceria.
 document.addEventListener('click',e=>{
+  // clique final de um arrasto/resize (mouseup) não conta como "fora", mesmo que o
+  // cursor tenha acabado fora do popover — acontece sempre que o usuário arrasta o
+  // canto além do tamanho máximo (560px): a caixa para de crescer no limite, mas o
+  // cursor continua indo, então solta o botão já fora da área. Sem essa checagem
+  // aqui (achado reportado pelo usuário), "ampliar e soltar" fechava o popover.
+  if(_crumbPop.dataset.dragged==='1'){ delete _crumbPop.dataset.dragged; return; }
   if(isSiblingPopoverOpen() && !e.target.closest('.crumb-pop') && !e.target.closest('a[data-nav="siblings"]')) closeSiblingPopover();
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape' && isSiblingPopoverOpen()) closeSiblingPopover(); });
