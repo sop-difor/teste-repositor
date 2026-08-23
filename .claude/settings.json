@@ -14,7 +14,10 @@
       "Bash(pkill -f \"http.server 8791\")",
       "Bash(python -c \"import PIL; print\\(PIL.__version__\\)\")",
       "Bash(awk '$1>1')",
-      "Bash(node --check main.js)"
+      "Bash(node --check main.js)",
+      "Bash(node \"C:/Users/Nildeno/.claude/skills/browser-automation/browser.mjs\" \"http://localhost:8940/gecope_mapa_obras.html\" --session g2 --script \"C:/Users/Nildeno/AppData/Local/Temp/claude/c--Users-Nildeno-Desktop-GECOPE-gecope/72301779-d879-422b-8b4a-6ec997a5c9b9/scratchpad/tour.mjs\" --timeout 60000)",
+      "Bash(timeout 90 bash -c 'until [ -s \"C:\\\\Users\\\\Nildeno\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Nildeno-Desktop-GECOPE-gecope\\\\72301779-d879-422b-8b4a-6ec997a5c9b9\\\\tasks\\\\bvqf92jji.output\" ]; do sleep 2; done; cat \"C:\\\\Users\\\\Nildeno\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Nildeno-Desktop-GECOPE-gecope\\\\72301779-d879-422b-8b4a-6ec997a5c9b9\\\\tasks\\\\bvqf92jji.output\"')",
+      "Bash(node \"C:/Users/Nildeno/.claude/skills/browser-automation/browser.mjs\" --session g2 --script \"C:/Users/Nildeno/AppData/Local/Temp/claude/c--Users-Nildeno-Desktop-GECOPE-gecope/72301779-d879-422b-8b4a-6ec997a5c9b9/scratchpad/tour2.mjs\" --timeout 60000)"
     ]
   }
 }

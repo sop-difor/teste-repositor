@@ -293,8 +293,13 @@ function visible(id){
 }
 // intensidade coroplética do nível 2 (municípios dentro do distrito/região aberto):
 // recalculado 1x por render() em vez de 1x por município, já que styleFeature() é
-// chamado 184x por layer.setStyle() — ver render() logo abaixo.
+// chamado 184x por layer.setStyle() — ver render() logo abaixo. A mesma choroT()
+// alimenta o nível 1 (ver groupStyle) — uma curva só, calibrada num lugar só.
 let _levelMax=1;
+// razão value/max, sempre em [0,1] — clamp nos dois lados (não só no topo) porque o
+// valor de entrada vem de dado ao vivo (Supabase); um agregado negativo (ex.: métrica
+// "aditivo" com reduções líquidas) não pode gerar fillOpacity fora do intervalo válido.
+function choroT(value,max){ return Math.max(0,Math.min(1,value/max)); }
 function styleFeature(f){
   const id=f.properties.id;
   if(!visible(id)) return HID;                    // níveis 0 e 1: municípios escondidos
@@ -306,7 +311,7 @@ function styleFeature(f){
     // preenchimento varia com a métrica atual (obra/valor/aditivo), não é mais
     // uma cor uniforme — um município com 0 obras e um com o máximo do distrito
     // não podem ser visualmente idênticos (achado da revisão final de design)
-    const t=Math.min(1,mval(aggIds([id]))/_levelMax);
+    const t=choroT(mval(aggIds([id])),_levelMax);
     return {fillColor:BASE,color:TOKENS.mapOpenBorder,weight:0.5+0.7*zt(),fillOpacity:.10+.62*t,opacity:.85};
   }
   return {fillColor:TOKENS.mapOpenFill,color:TOKENS.textBrightest,weight:1.0+1.0*zt(),fillOpacity:.85,opacity:1};  // cidade aberta (nível 3)
@@ -338,18 +343,50 @@ function onClick(id,e){
 
 // ---- camada de blocos (D.O./Região dissolvidos) ----
 let groupLayer=null;
+// intensidade coroplética do nível 1 quando há busca/filtro ativo — mesmo raciocínio
+// de _levelMax (nível 2, ver styleFeature): recalculado 1x por render(), não 1x por
+// grupo, já que groupStyle() roda uma vez por distrito/região a cada setStyle().
+// _groupValByGid guarda o valor de cada grupo desse mesmo cálculo (Map gid->valor),
+// pra groupStyle() só consultar em vez de rechamar idsOfGroup()+aggIds() por feature
+// (achado da revisão: sem isso, cada grupo era agregado 2x por render() — aqui e
+// dentro de groupStyle). Começa como Map vazio, nunca null: buildGroupLayer() também
+// invoca groupStyle() por feature (na troca de método), antes do próximo render()
+// repopular o Map — .get() num Map vazio devolve undefined (cai no "||0" abaixo) em
+// vez de estourar; o valor errado nesse instante nunca chega a pintar, porque
+// render() roda de novo, síncrono, logo em seguida (ver handler de #segMethod — se
+// esse handler algum dia ganhar um await/setTimeout entre trocar st.method e chamar
+// render() de novo, essa garantia quebra e um flash com valores do método errado
+// fica visível). Mesma folga existe no debounce de 150ms da busca/filtros (fSearch e
+// os checkboxes, mais abaixo): entre a mudança e o render() que recalcula este Map,
+// um hover/zoomend nesse intervalo lê o valor de ANTES da mudança — vazio, se nenhum
+// filtro estava ativo ainda, ou a combinação anterior, se já havia um — nunca a nova.
+// Aceito de propósito (efeito cosmético de até 150ms, autocorrige sozinho) em vez de
+// complicar o cache pra fechar uma janela tão estreita.
+let _levelMaxGroup=1, _groupValByGid=new Map();
 function groupStyle(f){
   // distrito/região na seleção combinada (Ctrl+clique): mesmo destaque cheio usado
   // pra município selecionado no nível 2 — consistência visual entre os dois níveis
   if(f&&st.sel&&st.sel.kind==='group'&&st.sel.ids.has(String(f.properties.gid))) return {fillColor:TOKENS.ng,color:TOKENS.textBrightest,weight:gw()+1.2,fillOpacity:.68,opacity:1};
-  return {fillColor:BASE,color:TOKENS.mapGroupBorder,weight:gw(),fillOpacity:.5,opacity:.9};
+  // sem busca/filtro ativos: cor uniforme, como sempre foi — a própria divisão em
+  // distritos/regiões já é a informação. Com filtro ativo, escala a opacidade pela
+  // intensidade — exatamente a mesma fórmula de styleFeature no nível 2 (.10+.62*t),
+  // pra responder visualmente "onde estão os resultados" sem precisar descer de nível.
+  const fillOpacity=hasActiveFilter() ? .10+.62*choroT(_groupValByGid.get(String(f.properties.gid))||0,_levelMaxGroup) : .5;
+  return {fillColor:BASE,color:TOKENS.mapGroupBorder,weight:gw(),fillOpacity,opacity:.9};
 }
 function groupHover(){return {fillColor:TOKENS.mapOpenFill,color:TOKENS.textBrightest,weight:gw()+0.8,fillOpacity:.72};}
 function onGroup(f,l){
   const gid=f.properties.gid;
-  l.on('mouseover',()=>{ l.setStyle(groupHover()); l.bringToFront(); st.hoverGroup=gid; renderPanel();
-    tip.setLatLng(l.getBounds().getCenter()).setContent(`<b>${f.properties.nome}</b><br>${METRIC[st.metric].label}: ${METRIC[st.metric].fmt(mval(aggIds(idsOfGroup(gid))))}`).addTo(map); });
-  l.on('mouseout',()=>{ groupLayer.resetStyle(l); st.hoverGroup=null; renderPanel(); tip.remove(); });
+  // renderPanel() refaz KPIs + os 3 gráficos (inclui reconstruir o SVG do gráfico por
+  // ano) — à toa se o painel lateral estiver recolhido e ninguém puder ver o resultado.
+  // panelVisible() é compartilhada (perto de _mainEl/openAside, mais abaixo) em vez de
+  // recriada a cada feature — buildGroupLayer() chama onGroup() ~11-14x por build.
+  l.on('mouseover',()=>{ l.setStyle(groupHover()); l.bringToFront(); st.hoverGroup=gid; if(panelVisible()) renderPanel();
+    // com filtro ativo, _groupValByGid já tem esse valor (calculado em render() logo
+    // antes do groupLayer.setStyle() que acabou de rodar) — não recalcula à toa aqui.
+    const v=hasActiveFilter()?(_groupValByGid.get(String(gid))||0):mval(aggIds(idsOfGroup(gid)));
+    tip.setLatLng(l.getBounds().getCenter()).setContent(`<b>${f.properties.nome}</b><br>${METRIC[st.metric].label}: ${METRIC[st.metric].fmt(v)}`).addTo(map); });
+  l.on('mouseout',()=>{ groupLayer.resetStyle(l); st.hoverGroup=null; if(panelVisible()) renderPanel(); tip.remove(); });
   // Ctrl/Cmd+clique num distrito/região soma à seleção combinada em vez de entrar nele
   l.on('click',e=>{ if(e.originalEvent&&(e.originalEvent.ctrlKey||e.originalEvent.metaKey)){ toggleSelection('group',gid); return; } goGroup(gid); });
 }
@@ -708,12 +745,34 @@ function setKPIs(){
   renderAditivoChart(ids);
   renderYearChart(ids);
 }
+// entries pra ranking/popover de irmãos — mesma forma que rankRows() consome
+// ({k,nome,sub,v}). Compartilhadas entre renderPanel() e o popover de navegação
+// lateral da trilha (Fase 8): uma lista, uma ordenação, um lugar só calculando.
+function groupEntries(){
+  return groupsList().map(g=>({k:g.id,nome:g.nome.replace(/^D\.O\.\s*/,''),sub:g.sede,v:mval(aggIds(idsOfGroup(g.id)))}))
+    .sort(st.method==='do'?(a,b)=>a.k-b.k:(a,b)=>b.v-a.v);
+}
+// includeZero=true pro popover de irmãos (Fase 8): lá qualquer município do grupo
+// precisa ser navegável, mesmo sem contrato — diferente do ranking do painel do
+// nível 2, que só lista quem tem obra (filtro original, mantido por padrão)
+function cityEntries(ids,includeZero){
+  return ids.map(id=>({k:id,nome:DB.municipios[id].nome,sub:'',v:mval(aggIds([id]))}))
+    .filter(e=>includeZero||e.v>0).sort((a,b)=>b.v-a.v);
+}
 function rankRows(entries,onClick){
   const max=Math.max(1,...entries.map(e=>e.v));
   const amber=st.metric==='aditivo'?' amber':'';
   return entries.map((e,i)=>`<div class="rrow" role="button" tabindex="0" data-k="${e.k}" data-kind="${onClick}">
      <div class="t"><span class="nm">${escHtml(e.nome)} ${e.sub?`<span class="sub2">· ${escHtml(e.sub)}</span>`:''}</span><span class="vv">${METRIC[st.metric].fmt(e.v)}</span></div>
      <div class="rbar${amber}"><i style="width:${Math.max(4,e.v/max*100)}%"></i></div></div>`).join('');
+}
+// ativação de .rrow (painel de ranking e popover de irmãos usam o mesmo HTML/dataset)
+function goRrow(rr){ if(rr.dataset.kind==='group')goGroup(rr.dataset.k); else goCity(rr.dataset.k); }
+// Enter/Espaço → clique, pros cards que são <div role="button"> em vez de <button> nativo
+function activateOnKey(e,selector){
+  if(e.key!=='Enter' && e.key!==' ') return;
+  const target=e.target.closest(selector); if(!target) return;
+  e.preventDefault(); target.click();
 }
 let CUROBRAS=[];
 const PIN_SVG='<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.3"/></svg>';
@@ -730,8 +789,6 @@ function obraCard(o,i){
     <div class="chips"><span class="chip">${escHtml(o.status)}</span>${o.tipo?`<span class="chip">${escHtml(o.tipo)}</span>`:''}${munChip}</div>
     <div class="info">
       <div><div class="l">Contratada</div><div class="d">${escHtml(o.contratada)}</div></div>
-      <div><div class="l">Contratante</div><div class="d">${escHtml(o.contratante)}</div></div>
-      <div><div class="l">Valor original</div><div class="d">${BRL.format(o.valor_original)}</div></div>
       <div><div class="l">Valor atual</div><div class="d">${BRL.format(o.valor)}</div></div>
       <div class="fis"><div class="l">${escHtml(o.fiscalTipo||'FISCAL')}</div><div class="d">${escHtml(o.fiscal||'—')}</div></div>
     </div>
@@ -848,6 +905,7 @@ document.addEventListener('keydown',e=>{
   if(document.getElementById('modalBg').classList.contains('show')) return;
   if(document.querySelector('.msel.on')) return;
   if(document.fullscreenElement) return;
+  if(isSiblingPopoverOpen()) return; // mesma regra: fecha o popover de irmãos primeiro, não perde a seleção no mesmo Esc
   clearSelection();
 });
 function hasActiveFilter(){ return !!st.f.q || FILTER_DEFS.some(d=>st.f[d.key].size>0); }
@@ -886,15 +944,14 @@ function renderPanel(){
     } else {
       scope.innerHTML= st.level===0 ? `Visão geral do estado — <b>clique no mapa</b> para dividir em ${methodName.toLowerCase()}`
                                     : `Estado dividido por <b>${methodName}</b> — passe o mouse ou clique para entrar`;
-      const ents=groupsList().map(g=>({k:g.id,nome:g.nome.replace(/^D\.O\.\s*/,''),sub:g.sede,v:mval(aggIds(idsOfGroup(g.id)))}))
-        .sort(st.method==='do'?(a,b)=>a.k-b.k:(a,b)=>b.v-a.v);
+      const ents=groupEntries();
       body.innerHTML=`<div class="sec-h"><span>${methodName}</span><span>${ents.length}</span></div>`+rankRows(ents,'group');
     }
   } else if(st.level===2){
     const g=grpById(st.group);
     scope.innerHTML=`Distrito/Região selecionado`;
     const ids=idsOfGroup(st.group);
-    const ents=ids.map(id=>({k:id,nome:DB.municipios[id].nome,sub:'',v:mval(aggIds([id]))})).filter(e=>e.v>0).sort((a,b)=>b.v-a.v);
+    const ents=cityEntries(ids);
     body.innerHTML=`<div style="font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700;color:${TOKENS.textBrightest};text-shadow:0 0 20px rgba(${TOKENS.ngRgb},.22)">${g.nome}</div>`
       +`<div class="sec-h"><span>Cidades (${ids.length})</span><span>clique p/ abrir</span></div>`+rankRows(ents,'city')
       +`<div class="sec-h" style="margin-top:20px"><span>Contratos do distrito</span></div>`+obrasCards(ids);
@@ -908,11 +965,15 @@ function renderPanel(){
 function renderCrumb(){
   const c=document.getElementById('crumb');
   const methodName=st.method==='do'?'Distritos':'Regiões';
+  // qualquer render() reconstrói a trilha do zero (innerHTML) — a âncora que o popover
+  // de irmãos guardava fica órfã, então fecha aqui em vez de tentar reposicionar.
+  closeSiblingPopover();
+  const sibTrig=(nome)=>`<a data-nav="siblings" class="cur sib" role="button" tabindex="0" aria-haspopup="true" title="Ver outros ${st.level===2?(st.method==='do'?'distritos':'regiões'):'municípios'}"><span class="sib-text">${nome}</span> <span class="sib-caret">▾</span></a>`;
   let h='';
   if(st.level===0){h=`<span class="cur">Ceará</span>`;}
   else if(st.level===1){h=`<a data-nav="state">Ceará</a><span class="sep">›</span><span class="cur">${methodName}</span>`;}
-  else if(st.level===2){h=`<a data-nav="state">Ceará</a><span class="sep">›</span><a data-nav="sub">${methodName}</a><span class="sep">›</span><span class="cur">${grpById(st.group).nome.replace(/^D\.O\.\s*/,'')}</span>`;}
-  else {h=`<a data-nav="state">Ceará</a><span class="sep">›</span><a data-nav="sub">${methodName}</a><span class="sep">›</span><a data-nav="group">${grpById(gidOf(st.city)).nome.replace(/^D\.O\.\s*/,'')}</a><span class="sep">›</span><span class="cur">${DB.municipios[st.city].nome}</span>`;}
+  else if(st.level===2){h=`<a data-nav="state">Ceará</a><span class="sep">›</span><a data-nav="sub">${methodName}</a><span class="sep">›</span>${sibTrig(grpById(st.group).nome.replace(/^D\.O\.\s*/,''))}`;}
+  else {h=`<a data-nav="state">Ceará</a><span class="sep">›</span><a data-nav="sub">${methodName}</a><span class="sep">›</span><a data-nav="group">${grpById(gidOf(st.city)).nome.replace(/^D\.O\.\s*/,'')}</a><span class="sep">›</span>${sibTrig(DB.municipios[st.city].nome)}`;}
   if(st.sel && st.sel.ids.size) h+=`<span class="sep">›</span><span class="cur">${st.sel.ids.size} selecionado${st.sel.ids.size===1?'':'s'}</span>`;
   c.innerHTML=h;
 }
@@ -924,8 +985,20 @@ function renderFoot(){
 
 function render(){
   if(st.level===2) _levelMax=Math.max(1,...idsOfGroup(st.group).map(id=>mval(aggIds([id]))));
+  if(st.level===1 && hasActiveFilter()){
+    _groupValByGid=new Map(groupsList().map(g=>[String(g.id),mval(aggIds(idsOfGroup(g.id)))]));
+    _levelMaxGroup=Math.max(1,...[..._groupValByGid.values()]);
+  } else {
+    _groupValByGid=new Map();
+  }
   layer.setStyle(styleFeature); applyInteractivity(); updateLabels();
-  if(groupLayer) groupLayer.setStyle(groupStyle); // reflete seleção (Ctrl+clique) sem esperar o próximo zoomend
+  // groupStyle() agora faz trabalho de verdade (idsOfGroup+aggIds) quando há filtro
+  // ativo, não só devolve um objeto constante — só compensa recalcular enquanto o
+  // próprio groupLayer está visível (nível 1). Ctrl+clique em grupo (st.sel.kind
+  // ==='group') também só existe nesse nível (goGroup/goCity/goState/goSub sempre
+  // zeram st.sel antes de sair dele), então esta guarda não perde o "reflete seleção
+  // sem esperar o zoomend" que esta chamada existe pra garantir.
+  if(st.level===1 && groupLayer) groupLayer.setStyle(groupStyle);
   setLayer(stateShape, st.level===0); if(st.level===0 && stateShape) stateShape.bringToFront();
   setLayer(groupLayer, st.level===1); if(st.level===1 && groupLayer) groupLayer.bringToFront();
   renderCrumb(); renderPanel(); renderFoot();
@@ -1053,8 +1126,15 @@ openCtrl(false);
 
 // painel lateral (KPIs/ranking) recolhível — aberto por padrão (ver modo apresentação abaixo)
 const _mainEl=document.querySelector('main'), _asideT=document.getElementById('asideToggle');
+// compartilhada com onGroup() (nível 1) — evita recriar o mesmo closure a cada feature
+// em buildGroupLayer() (~11-14x por build/troca de método).
+function panelVisible(){ return !_mainEl.classList.contains('aside-collapsed'); }
 function openAside(o){
   _mainEl.classList.toggle('aside-collapsed',!o); _asideT.style.display=o?'none':'';
+  // ao reabrir, o painel pode estar com conteúdo velho (onGroup pula renderPanel()
+  // enquanto está recolhido, ver Fase 7) — atualiza 1x na hora de abrir pra não mostrar
+  // o hover de antes de fechar caso o mouse ainda esteja sobre um distrito/região.
+  if(o) renderPanel();
   clearTimeout(openAside._t); openAside._t=setTimeout(()=>{ map.invalidateSize(false); refit(); },380);
 }
 _asideT.onclick=()=>openAside(true);
@@ -1125,8 +1205,23 @@ syncScopeBtn(false);
 document.getElementById('segMethod').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   document.querySelectorAll('#segMethod button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  // buildGroupLayer() já chama groupStyle() por feature aqui, com _groupValByGid ainda
+  // com os gids do MÉTODO ANTERIOR (ids colidem entre do/reg, ex.: gid 0 existe nos
+  // dois, com grupos diferentes) — só é seguro porque render()/goSub() roda de novo,
+  // síncrono, ANTES de qualquer paint do navegador (ver comentário em _groupValByGid).
+  // Não trocar isso por um await/setTimeout entre as duas chamadas sem revisar de novo.
+  // âncora capturada ANTES da troca de método — depois, idsOfGroup()/gidOf() já leem
+  // o método novo. Sem isso, trocar Distrito<->Região sempre jogava de volta pro nível
+  // 1 (Fase 8): no nível 3 não tinha necessidade nenhuma — st.city significa a mesma
+  // coisa nos dois métodos, e renderCrumb() já recalcula o grupo-pai certo sozinho; no
+  // nível 2, cai num grupo equivalente (o de maior valor na métrica atual dentro do
+  // grupo antigo) em vez de simplesmente sair do que o usuário estava vendo.
+  let anchor=null;
+  if(st.level===2) anchor=idsOfGroup(st.group).sort((x,y)=>mval(aggIds([y]))-mval(aggIds([x])))[0]||null;
   st.method=b.dataset.v; rebuildGroupLabels(); buildGroupLayer();
-  if(st.level===0){render();} else {goSub();}
+  if(st.level===0 || st.level===3){ render(); }
+  else if(st.level===2 && anchor){ goGroup(gidOf(anchor)); }
+  else { goSub(); }
 });
 document.getElementById('segMetric').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
@@ -1136,13 +1231,60 @@ document.getElementById('segMetric').addEventListener('click',e=>{
 document.getElementById('crumb').addEventListener('click',e=>{
   const a=e.target.closest('a'); if(!a)return; const n=a.dataset.nav;
   if(n==='state')goState(); else if(n==='sub')goSub(); else if(n==='group')goGroup(gidOf(st.city));
+  else if(n==='siblings') isSiblingPopoverOpen()?closeSiblingPopover():openSiblingPopover(a);
 });
+// mesmo padrão de teclado já usado em #body pra .rrow/.obra/etc. (Enter/Espaço aciona
+// como clique) — só pro gatilho novo; os outros links da trilha (data-nav sem
+// "siblings") já não tinham tabindex antes desta fase, fora do escopo consertar aqui.
+document.getElementById('crumb').addEventListener('keydown',e=>activateOnKey(e,'a[data-nav="siblings"]'));
+// ---- popover de navegação lateral entre irmãos (Fase 8) ----
+// mesmo mecanismo nos níveis 2 e 3: o segmento atual da trilha (nome do distrito/
+// região ou do município) abre a lista de irmãos pra pular direto — sem precisar
+// voltar ao nível 1 primeiro e entrar de novo (antes: sempre 2 navegações + 2 voos
+// de câmera; agora, 1). Reaproveita rankRows()/.rrow — mesmo HTML/clique/teclado dos
+// rankings que já existem no painel — em vez de um componente novo.
+const _crumbPop=document.getElementById('crumbPop');
+function isSiblingPopoverOpen(){ return _crumbPop.classList.contains('show'); }
+function closeSiblingPopover(){ _crumbPop.classList.remove('show'); }
+function openSiblingPopover(anchorEl){
+  let title,entries,kind;
+  // "outros" — exclui o grupo/município atual da própria lista (groupEntries/
+  // cityEntries devolvem a lista completa, usada como está no ranking do painel;
+  // aqui precisa ficar só quem realmente é diferente de onde já se está)
+  if(st.level===2){ title=st.method==='do'?'Outros distritos':'Outras regiões'; entries=groupEntries().filter(e=>String(e.k)!==String(st.group)); kind='group'; }
+  else if(st.level===3){ title='Outros municípios'; entries=cityEntries(idsOfGroup(gidOf(st.city)),true).filter(e=>String(e.k)!==String(st.city)); kind='city'; }
+  else return;
+  _crumbPop.innerHTML=`<div class="sec-h"><span>${title}</span><span>${entries.length}</span></div>`
+    +(entries.length?rankRows(entries,kind):'<div class="msel-empty">Nenhum resultado neste recorte</div>');
+  // position:fixed posicionado por JS (não CSS puro): o gatilho não é o pai direto do
+  // popover no DOM (fica fora de #crumb, que reconstrói o innerHTML a cada render() —
+  // um filho fixo ali seria apagado a cada navegação), e a trilha muda de largura/
+  // posição conforme o nome do grupo/município, então o cálculo tem que ser dinâmico.
+  const r=anchorEl.getBoundingClientRect();
+  _crumbPop.style.left=Math.max(8,Math.min(window.innerWidth-268,r.left+r.width/2-130))+'px';
+  _crumbPop.style.top=(r.bottom+8)+'px';
+  _crumbPop.classList.add('show');
+}
+_crumbPop.addEventListener('click',e=>{
+  const rr=e.target.closest('.rrow'); if(!rr) return;
+  closeSiblingPopover();
+  goRrow(rr);
+});
+_crumbPop.addEventListener('keydown',e=>activateOnKey(e,'.rrow'));
+// clique fora fecha (mesmo padrão do .msel de filtros); clique EM CIMA do próprio
+// gatilho não conta como "fora" — senão o toggle do handler de #crumb abriria e este
+// listener fecharia de volta no mesmo clique, e o popover nunca apareceria.
+document.addEventListener('click',e=>{
+  if(isSiblingPopoverOpen() && !e.target.closest('.crumb-pop') && !e.target.closest('a[data-nav="siblings"]')) closeSiblingPopover();
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && isSiblingPopoverOpen()) closeSiblingPopover(); });
+
 document.getElementById('body').addEventListener('click',e=>{
   // chip de item selecionado (Ctrl+clique): clicar nele tira da seleção combinada
   const sc=e.target.closest('.chip-sel');
   if(sc){ toggleSelection(st.sel?st.sel.kind:'group',sc.dataset.selid); return; }
   const rr=e.target.closest('.rrow');
-  if(rr){ if(rr.dataset.kind==='group')goGroup(rr.dataset.k); else goCity(rr.dataset.k); return; }
+  if(rr){ goRrow(rr); return; }
   // chip de município do card do contrato: leva direto até ele no mapa,
   // em vez de precisar descer Estado → Distrito → Cidade manualmente
   const loc=e.target.closest('.chip.mun.locate');
@@ -1153,13 +1295,7 @@ document.getElementById('body').addEventListener('click',e=>{
 // .chip.mun.locate/.chip-sel) são <div>/<span> com role="button" e tabindex, não
 // elementos <button> nativos, então não recebem ativação por teclado de graça;
 // painel público de órgão estadual precisa ser navegável sem mouse.
-document.getElementById('body').addEventListener('keydown',e=>{
-  if(e.key!=='Enter' && e.key!==' ') return;
-  const target=e.target.closest('.rrow,.obra,.chip.mun.locate,.chip-sel');
-  if(!target) return;
-  e.preventDefault();
-  target.click();
-});
+document.getElementById('body').addEventListener('keydown',e=>activateOnKey(e,'.rrow,.obra,.chip.mun.locate,.chip-sel'));
 map.on('zoomend',()=>{ layer.setStyle(styleFeature); if(groupLayer&&map.hasLayer(groupLayer))groupLayer.setStyle(groupStyle); updateLabels(); });
 map.on('moveend',()=>updateLabels());
 // clicar em espaço vazio do mapa (fora de qualquer distrito/região/município)
@@ -1177,6 +1313,8 @@ map.on('click',e=>{
 });
 
 // ---- init ----
+// medido (Fase 7): construir as 184 features aqui custa ~6-15ms mesmo invisível
+// nos níveis 0/1 (HID) — não compensa adiar/complicar a inicialização por isso.
 layer=L.geoJSON(GEO,{style:styleFeature,onEachFeature:onEach}).addTo(map);
 fullBounds=layer.getBounds();
 stateShape=L.geoJSON(ESTADO,{style:{fillColor:TOKENS.mapStateFill,color:`rgba(${TOKENS.ngRgb},.42)`,weight:1.5,fillOpacity:.96},
