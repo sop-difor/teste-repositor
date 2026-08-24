@@ -1,0 +1,60 @@
+name: Retry Ampere A1 creation
+
+# Tenta criar a instância Ampere A1 (Always Free) da GECOPE a cada 20 minutos, até a
+# capacidade da Oracle liberar na região sa-saopaulo-1. Objetivo: migrar o whatsapp-proxy
+# para longe da limitação de RAM da VM.Standard.E2.1.Micro (1GB) atual sem precisar de
+# alguém voltando manualmente no console da Oracle. Ver server/whatsapp-proxy/DEPLOY.md.
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+
+jobs:
+  try-create:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar OCI CLI
+        run: pip install oci-cli
+
+      - name: Configurar credenciais da OCI
+        run: |
+          mkdir -p ~/.oci
+          printf '%s' "${{ secrets.OCI_API_PRIVATE_KEY }}" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=sa-saopaulo-1
+          key_file=~/.oci/key.pem
+          EOF
+          chmod 600 ~/.oci/config
+
+      - name: Preparar chave SSH pública da instância
+        run: |
+          cat > /tmp/ampere-key.pub <<'EOF'
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCg5QzlWRmU+3pqd1YcVXuIk/4PHOOewWu3A/Jov78vddwZ/61S23HivPdfXX2Jes9JFqkQ55TPbp/mLa1YVZpnJQvyH+w7FrKaGw/A9f1w15DcYWcoCSRQucjm3yIltVyK7U115uyD6un2ME1yw/Hg7wJAdiSWIXUc0HEixM2MzHLu77BzpMyDSStxhfLGNG0UyTJtllMRzoHmYo76v1Jf0xx+6ZDIcRF69nOaRycrTJVXmxKlaDMPmubnOnoKnzgEi6VjND+izzEkjsPNL0YB4LgkaJh7FHnx3SOB+WCbPyrUeGyxLEGiw1/10oteqQdU/tZgZ/N1mC4TntZHJ0Qjl+s77+wghKjyrhWFarrfY2QFqgXlQcqhv8w9UKt17RCe73radwTuAsIDphDFIuCU0WFI1jaBo48/ylqI4W2k816TBZClJZvQUEyhR+1zHtcak1aGQws4vaPYKRHDQSj93I7CXAKSkr8+r2ZXUSKtwA3fvYc0ebw8YxMnTShZqR0RG/c89ZQs0w6YvFZ8Tjtd/PVl6DKo+56kg89ApcBng5MSoG15DiQeBfS66au+wlCH516joK20L3azxaBUjHay14LlbfkP6KQ7/Lt4vudvG6ceomk4ZRxXI7WasTEJ2NyOF2QJObNA+sfktDPtwnu5F9x2iperJo2oH6y70gdjEw== sop_difor@d1d2462bfbb2
+          EOF
+
+      - name: Tentar criar a instância Ampere A1
+        id: try
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_SUBNET_ID: ocid1.subnet.oc1.sa-saopaulo-1.aaaaaaaa7bqmztc43vwa3jw55xxglxqznxd7xdvqaq3b2ykxjxz2ikwhjbfa
+          SSH_PUBLIC_KEY_FILE: /tmp/ampere-key.pub
+        run: bash .github/scripts/try-create-ampere.sh
+
+      - name: Notificar sucesso (abre issue)
+        if: steps.try.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "✅ Instância Ampere A1 criada — GECOPE WhatsApp" \
+            --body "A instância Ampere A1 (Always Free) foi criada com sucesso. IP público: ${{ steps.try.outputs.ip }}. Próximo passo: seguir o DEPLOY.md para subir o stack lá e migrar o WHATSAPP_PROXY_URL. Depois de confirmar que está tudo funcionando na nova VM, desative este workflow (Actions > Retry Ampere A1 creation > ... > Disable workflow) para não continuar tentando criar instâncias extras."
