@@ -424,10 +424,10 @@ function fitGroup(){ const b=boundsOfIds(idsOfGroup(st.group)); if(b) map.fitBou
 function fitCity(){ const b=boundsOfIds([st.city]); if(b) map.fitBounds(b,{padding:[60,60],maxZoom:11}); }
 
 // navegação
-function goState(){st.sel=null;st.level=0;st.group=null;st.city=null;render();fitFull();}
-function goSub(){st.sel=null;st.level=1;st.group=null;st.city=null;render();fitFull();}
-function goGroup(g){st.sel=null;st.group=g;st.level=2;st.city=null;render();fitGroup();}
-function goCity(id){st.sel=null;st.city=id;st.level=3;render();fitCity();}
+function goState(){st.sel=null;st.level=0;st.group=null;st.city=null;st.hoverGroup=null;render();fitFull();}
+function goSub(){st.sel=null;st.level=1;st.group=null;st.city=null;st.hoverGroup=null;render();fitFull();}
+function goGroup(g){st.sel=null;st.group=g;st.level=2;st.city=null;st.hoverGroup=null;render();fitGroup();}
+function goCity(id){st.sel=null;st.city=id;st.level=3;st.hoverGroup=null;render();fitCity();}
 
 // ---- rótulos ----
 // centroide "de área" (não a média dos vértices) — evita rótulo deslocado em
