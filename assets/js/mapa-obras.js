@@ -43,6 +43,8 @@ const SB_URL=window.SUPABASE_URL;
 const SB_KEY=window.SUPABASE_KEY;
 const SB_TABLE='contratos_edificacao';
 const SB_COMISSAO='comissao_fiscalizacao';
+const SB_ADITIVOS='aditivos_contrato';
+const SB_FICHA='ficha_contrato';
 // só as colunas realmente usadas em mapRow()/openModal() — evita select=* (35 colunas,
 // 8 delas nunca lidas pelo app) trazendo ~4MB quando ~3,4MB bastam.
 const CONTRATOS_COLS=['id_obra','nr_contrato_sop','codigo_obra','descricao_obra','descricao_tipo_contrato',
@@ -51,6 +53,11 @@ const CONTRATOS_COLS=['id_obra','nr_contrato_sop','codigo_obra','descricao_obra'
   'dias_paralisado','data_fim_previsto','distrito_operacional','nr_contrato_ext','nr_contrato_sic',
   'data_fim_vigencia_contrato','cnpj_contratada','cnpj_contratante','atualizado_em'].join(',');
 const COMISSAO_COLS='id_obra,nome_completo,nome_referencia,tipo';
+// aditivos_contrato/ficha_contrato não têm id_obra — a chave de junção com
+// contratos_edificacao é nr_contrato_sop (texto, já denormalizado nas duas tabelas,
+// evita depender de ficha_contrato.id_contrato pra cruzar com aditivos_contrato).
+const ADITIVOS_COLS='nr_contrato_sop,nr_aditivo,tipo_aditivo,valor_aprovado,valor_supressao,valor_repercussao,execucao_aprovado,prazo_aprovado,nr_protocolo,data_assinatura';
+const FICHA_COLS='nr_contrato_sop,total_medido,percentual_total_medido';
 // carteira ativa = tudo que não é "concluído/encerrado" (ver statusBucket) — é o recorte
 // que a SOP-CE de fato gerencia; os outros ~90% do histórico só aparecem sob demanda
 // (toggle "Histórico completo"), porque não mudam mais e só diluiriam os KPIs/gráficos.
@@ -134,12 +141,23 @@ async function fetchTable(tbl,{select='*',filter=''}={}){
   const rest=await Promise.all(pageReqs);
   return firstChunk.concat(...rest);
 }
+// monta o filtro `col=in.(...)` de uma query PostgREST. Valores de coluna texto
+// (quote=true) vão entre aspas duplas, com qualquer aspa embutida escapada — sem
+// isso, qualquer valor com vírgula/parêntese/aspa quebra a lista inteira (fetchTable
+// lança, e o .catch em loadData desliga a aba pra TODOS os contratos do escopo, não
+// só o de valor problemático). id_obra é numérico, não precisa — mesmo padrão já
+// usado no filtro de status_obra em loadData().
+function inListFilter(col,values,quote){
+  if(!values||!values.length) return '';
+  const list=quote ? values.map(v=>`"${String(v).replace(/"/g,'\\"')}"`).join(',') : values.join(',');
+  return `${col}=in.(${list})`;
+}
 // id_obra -> comissão de fiscalização completa (ordenada: Presidente > Fiscal > 1º/2º/3º Membro > Suplente).
 // idFilter restringe às obras já carregadas (só faz sentido na carteira ativa, onde a
 // lista de ids cabe numa query — no histórico completo os ~3.577 ids estourariam a URL,
 // então busca a tabela de comissão inteira, só com as 4 colunas usadas).
 async function fetchFiscais(idFilter){
-  const filter=idFilter&&idFilter.length ? `id_obra=in.(${idFilter.join(',')})` : '';
+  const filter=inListFilter('id_obra',idFilter,false);
   const rows=await fetchTable(SB_COMISSAO,{select:COMISSAO_COLS,filter}); const m={};
   for(const r of rows){
     const k=r.id_obra; if(k==null) continue;
@@ -148,6 +166,25 @@ async function fetchFiscais(idFilter){
     (m[k]=m[k]||[]).push({nome, tipo:c.label, rank:c.rank});
   }
   for(const k in m) m[k].sort((a,b)=>b.rank-a.rank);
+  return m;
+}
+// nr_contrato_sop -> aditivos do contrato (ordenados por data, mais recente primeiro).
+// Mesma lógica de escopo que fetchFiscais: na carteira ativa filtra pelos contratos já
+// carregados (cabe numa URL); no histórico completo busca a tabela inteira (557 linhas,
+// bem menor que as ~3.577 de contratos_edificacao).
+async function fetchAditivos(nrFilter){
+  const filter=inListFilter('nr_contrato_sop',nrFilter,true);
+  const rows=await fetchTable(SB_ADITIVOS,{select:ADITIVOS_COLS,filter}); const m={};
+  for(const r of rows){ const k=r.nr_contrato_sop; if(!k) continue; (m[k]=m[k]||[]).push(r); }
+  for(const k in m) m[k].sort((a,b)=>(b.data_assinatura||'').localeCompare(a.data_assinatura||''));
+  return m;
+}
+// nr_contrato_sop -> ficha do contrato (só os 2 totais de medição já calculados
+// upstream pelo SIGSOP — total_medido/percentual_total_medido, ver aba Medições do modal).
+async function fetchFichas(nrFilter){
+  const filter=inListFilter('nr_contrato_sop',nrFilter,true);
+  const rows=await fetchTable(SB_FICHA,{select:FICHA_COLS,filter}); const m={};
+  for(const r of rows){ if(r.nr_contrato_sop) m[r.nr_contrato_sop]=r; }
   return m;
 }
 // `lastSync` é o maior `atualizado_em` dos contratos carregados (ver chamada em loadData),
@@ -176,7 +213,9 @@ if(_dataErrorRetryBtn) _dataErrorRetryBtn.onclick=()=>location.reload();
 // visivelmente desatualizado, e longo o bastante pra recarregar/trocar de escopo
 // instantaneamente dentro da mesma sessão.
 const CACHE_TTL_MS=5*60*1000;
-function cacheKey(scope){ return 'gecope_mapa_cache_v1_'+scope; }
+// v2: formato do cache ganhou adit/ficha (aba Aditivos/Medições do modal) — versão
+// bump pra nunca reidratar um objeto v1 (sem essas chaves) como se fosse completo.
+function cacheKey(scope){ return 'gecope_mapa_cache_v2_'+scope; }
 function readCache(scope){
   try{
     const raw=sessionStorage.getItem(cacheKey(scope)); if(!raw) return null;
@@ -185,8 +224,8 @@ function readCache(scope){
     return obj;
   }catch{ return null; }
 }
-function writeCache(scope,rows,fisc){
-  try{ sessionStorage.setItem(cacheKey(scope), JSON.stringify({ts:Date.now(),rows,fisc})); }
+function writeCache(scope,rows,fisc,adit,ficha){
+  try{ sessionStorage.setItem(cacheKey(scope), JSON.stringify({ts:Date.now(),rows,fisc,adit,ficha})); }
   catch(e){ /* quota/privacidade — cache é só um bônus de velocidade, ignora e segue sem ele */ }
 }
 
@@ -196,30 +235,40 @@ async function loadData(){
   try{
     const scope=st.dataScope;
     const cached=readCache(scope);
-    let rows, fisc;
+    let rows, fisc, adit, ficha;
     if(cached){
-      rows=cached.rows; fisc=cached.fisc;
+      rows=cached.rows; fisc=cached.fisc; adit=cached.adit||{}; ficha=cached.ficha||{};
     } else if(scope==='ativa'){
-      // carteira ativa: filtra no servidor (só ~348 linhas) e, com os ids já em mãos,
-      // busca a comissão só desses contratos — evita baixar as ~8.239 linhas inteiras
-      // de comissao_fiscalizacao quando 90% delas são de obras já encerradas.
+      // carteira ativa: filtra no servidor (só ~348 linhas) e, com os ids/números já em
+      // mãos, busca comissão/aditivos/ficha só desses contratos — evita baixar as tabelas
+      // inteiras (comissao_fiscalizacao, aditivos_contrato) quando 90% delas são de obras
+      // já encerradas, fora da carteira ativa.
       const filter=`status_obra=in.(${ACTIVE_STATUSES.map(s=>`"${s}"`).join(',')})`;
       rows=await fetchTable(SB_TABLE,{select:CONTRATOS_COLS,filter});
       const ids=[...new Set(rows.map(r=>r.id_obra).filter(v=>v!=null))];
-      try{ fisc=await fetchFiscais(ids); }catch(e){ console.warn('comissao_fiscalizacao indisponível:',e.message); fisc={}; }
-      writeCache(scope,rows,fisc);
+      const nrs=[...new Set(rows.map(r=>r.nr_contrato_sop).filter(Boolean))];
+      [fisc,adit,ficha]=await Promise.all([
+        fetchFiscais(ids).catch(e=>{ console.warn('comissao_fiscalizacao indisponível:',e.message); return {}; }),
+        fetchAditivos(nrs).catch(e=>{ console.warn('aditivos_contrato indisponível:',e.message); return {}; }),
+        fetchFichas(nrs).catch(e=>{ console.warn('ficha_contrato indisponível:',e.message); return {}; }),
+      ]);
+      writeCache(scope,rows,fisc,adit,ficha);
     } else {
-      // histórico completo: os ids não cabem numa query id_obra=in.(...), então busca
-      // as duas tabelas inteiras (só com as colunas usadas) em paralelo.
-      const [rowsR,fiscR]=await Promise.all([
+      // histórico completo: os ids/números não cabem numa query in.(...), então busca
+      // as quatro tabelas inteiras (só com as colunas usadas) em paralelo.
+      const [rowsR,fiscR,aditR,fichaR]=await Promise.all([
         fetchTable(SB_TABLE,{select:CONTRATOS_COLS}),
         fetchFiscais().catch(e=>{ console.warn('comissao_fiscalizacao indisponível:',e.message); return {}; }),
+        fetchAditivos().catch(e=>{ console.warn('aditivos_contrato indisponível:',e.message); return {}; }),
+        fetchFichas().catch(e=>{ console.warn('ficha_contrato indisponível:',e.message); return {}; }),
       ]);
-      rows=rowsR; fisc=fiscR;
-      writeCache(scope,rows,fisc);
+      rows=rowsR; fisc=fiscR; adit=aditR; ficha=fichaR;
+      writeCache(scope,rows,fisc,adit,ficha);
     }
     let sem=0;
-    for(const r of rows){ const cod=NAMEIDX[normTxt(r.municipio)]; if(!cod){sem++;continue;} const o=mapRow(r); const com=fisc[o.id_obra]||[]; o.comissao=com; o.fiscal=com[0]?com[0].nome:'—'; o.fiscalTipo=com[0]?com[0].tipo:'FISCAL'; DB.municipios[cod].obras.push(o); }
+    for(const r of rows){ const cod=NAMEIDX[normTxt(r.municipio)]; if(!cod){sem++;continue;} const o=mapRow(r); const com=fisc[o.id_obra]||[]; o.comissao=com; o.fiscal=com[0]?com[0].nome:'—'; o.fiscalTipo=com[0]?com[0].tipo:'FISCAL';
+      const nrKey=r.nr_contrato_sop; o.aditivos=(nrKey&&adit[nrKey])||[]; o.ficha=(nrKey&&ficha[nrKey])||null;
+      DB.municipios[cod].obras.push(o); }
     invalidateAggCache();
     const scopeTxt=scope==='ativa'?'carteira ativa':'histórico completo';
     // Comparação por string funciona porque `atualizado_em` vem do Postgres em ISO
@@ -236,7 +285,18 @@ async function loadData(){
   fillFilters(); render(); refit();
 }
 const BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
+// só pras abas Aditivos/Medições do modal (valores por contrato individual, onde
+// centavos importam pra bater com o extrato oficial) — os KPIs do painel principal e
+// os cards de obra continuam em BRL (sem casas decimais) de propósito: são somas de
+// carteira/lista, ninguém confere centavo a centavo ali, e o número já é grande o
+// bastante sem precisar de mais 3 caracteres de ruído.
+const BRL2=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:2,maximumFractionDigits:2});
 const NUM=new Intl.NumberFormat('pt-BR');
+// os percentuais já existentes no app usam toFixed(0) (sem casa decimal, então sem
+// separador nenhum) — as abas Aditivos/Medições do modal são o 1º lugar a mostrar
+// 1 casa decimal de verdade, então precisam da vírgula pt-BR (Intl.NumberFormat
+// seria mais robusto, mas pra 1 valor isolado o replace já resolve sem 3ª instância).
+function fmtPct1(v){ return v.toFixed(1).replace('.',','); }
 
 const st={method:'do',metric:'obras',level:0,group:null,city:null,hoverGroup:null,dataScope:'ativa',
   sel:null, // Ctrl+clique em vários distritos/regiões/municípios: {kind:'group'|'city', ids:Set}
@@ -835,12 +895,181 @@ function fmtCNPJ(v){
   if(d.length!==14) return escHtml(String(v));
   return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12,14)}`;
 }
-const NUMBR=new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-function fmtNumBR(v){ return NUMBR.format(num(v)); }
 function mSection(title,fields){
   return `<div class="msec">${title}</div><div class="mgrid">`
     +fields.map(([l,d,extra])=>`<div><div class="l">${l}</div><div class="d">${d}${extra||''}</div></div>`).join('')
     +`</div>`;
+}
+// ---- gráficos das abas Aditivos/Medições ----
+// anel/gauge de 1 valor (0-100%) — usado em Medições, onde só existem 2 "fatias"
+// (medido/restante) e o que importa é o número no centro, não comparar categorias.
+function donutGauge(pct,color,size){
+  size=size||110;
+  const stroke=Math.round(size*0.13), r=(size-stroke)/2, c=2*Math.PI*r;
+  const p=Math.max(0,Math.min(100,pct)), dash=c*p/100;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="${p.toFixed(1)}% medido">
+    <circle class="donut-track" cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke-width="${stroke}"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round"
+      stroke-dasharray="${dash.toFixed(2)} ${(c-dash).toFixed(2)}" transform="rotate(-90 ${size/2} ${size/2})"/>
+  </svg>`;
+}
+// legenda em lista (dot + rótulo + valor) compartilhada pelas duas fábricas de gráfico
+// acima — "neutral" usa a cor de "trilho" do CSS em vez de uma cor de dado (evita
+// hardcode de cor aqui pra algo que não representa categoria nenhuma, só o restante).
+function pieLegend(items){
+  return `<div class="pie-leg">${items.map(s=>
+    `<div class="pie-item"><span class="pie-dot${s.neutral?' neutral':''}"${s.neutral?'':` style="background:${s.color}"`}></span>`
+    +`<span class="pie-l">${escHtml(s.label)}</span><span class="pie-v">${s.pctLabel}</span></div>`).join('')}</div>`;
+}
+// barras DIVERGENTES (eixo zero ao centro) pra Acréscimo/Supressão/Repercussão — o
+// gráfico certo pra esse dado específico: Acréscimo é sempre ganho (positivo, cresce
+// pra direita), Supressão é sempre perda conceitual mesmo guardada como número
+// positivo na base (por isso entra com sinal invertido aqui, cresce pra esquerda), e
+// Repercussão é a diferença líquida das duas (valor_aprovado−valor_supressao) — pode
+// dar positiva OU negativa de verdade, então precisa de um eixo que aceite os dois
+// lados. Uma pizza não serve (fatia negativa não existe — foi o motivo da 1ª versão
+// desta função ter tirado a Repercussão da pizza); barras na mesma direção também não
+// (não mostram que Supressão é uma redução, nem pra que lado a Repercussão pende).
+// Cada barra escala em relação ao maior |percentual| dos três — o rótulo ao lado
+// sempre mostra o percentual real (sobre o valor original), a barra só dá a
+// comparação visual entre os três.
+function divergingBars(rows){
+  const maxAbs=Math.max(.1,...rows.map(r=>Math.abs(r.pct)));
+  return `<div class="divbars">${rows.map(r=>{
+    const w=Math.abs(r.pct)/maxAbs*48; // até 48% de cada lado do centro, deixa folga da borda
+    const left=r.pct<0 ? (50-w) : 50;
+    return `<div class="divbar-row"><div class="divbar-h"><span class="divbar-l">${escHtml(r.label)}</span><span class="divbar-v" style="color:${r.color}">${r.valLabel}</span></div>
+      <div class="divbar-track"><i class="divbar-mid"></i><i class="divbar-fill" style="left:${left.toFixed(2)}%;width:${w.toFixed(2)}%;background:${r.color}"></i></div></div>`;
+  }).join('')}</div>`;
+}
+function parseISODate(s){
+  const m=s&&String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? new Date(Date.UTC(+m[1],+m[2]-1,+m[3])) : null;
+}
+// linha de prazo: início → fim + quanto já passou (barra) + dias restantes/vencidos.
+// Usa as datas JÁ vigentes do contrato (data_inicio_real/data_fim_previsto/
+// data_fim_vigencia_contrato) — esses campos vêm de contratos_edificacao e já refletem
+// qualquer aditivo de prazo aprovado até hoje, então não precisa somar dias de aditivo
+// em aditivo pra saber "o prazo atual": a base já faz essa conta.
+function timelineGauge(label,startStr,endStr){
+  const start=parseISODate(startStr), end=parseISODate(endStr);
+  if(!start||!end) return `<div class="tl-row"><div class="tl-h"><span class="tl-l">${escHtml(label)}</span><span class="tl-days">—</span></div><div class="empty" style="padding:2px 0">Datas insuficientes pra calcular o prazo.</div></div>`;
+  const now=new Date(), today=new Date(Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()));
+  const totalDays=Math.round((end-start)/86400000);
+  const remainingDays=Math.round((end-today)/86400000);
+  const pct=totalDays>0?Math.max(0,Math.min(100,(totalDays-remainingDays)/totalDays*100)):100;
+  const overdue=remainingDays<0;
+  const daysTxt=overdue?`Vencido há ${NUM.format(Math.abs(remainingDays))} dia${Math.abs(remainingDays)===1?'':'s'}`
+    :`${NUM.format(remainingDays)} dia${remainingDays===1?'':'s'} restante${remainingDays===1?'':'s'}`;
+  const color=overdue?TOKENS.statusStop:(remainingDays<=30?TOKENS.amber:TOKENS.ng);
+  return `<div class="tl-row">
+    <div class="tl-h"><span class="tl-l">${escHtml(label)}</span><span class="tl-days" style="color:${color}">${daysTxt}</span></div>
+    <div class="tl-track"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div>
+    <div class="tl-dates"><span>${fmtDateBR(startStr)}</span><span>${fmtDateBR(endStr)}</span></div>
+  </div>`;
+}
+// botão discreto que recolhe/expande a lista de cards de um dos dois grupos de
+// aditivo (valor/prazo) — o resumo (barras/timeline) fica sempre visível, só o
+// detalhe por aditivo (mais verboso, cresce com o nº de aditivos) começa recolhido.
+// Mesmo padrão de toggle já usado no botão "Comissão completa" de Dados Gerais.
+function adToggle(targetId,n,kindLabel){
+  return `<button type="button" class="adToggle" data-target="${targetId}" aria-expanded="false" aria-controls="${targetId}">
+    <span>Ver ${n} aditivo${n===1?'':'s'} ${kindLabel}</span> <span class="adToggle-car">▾</span></button>`;
+}
+// cabeçalho comum aos 3 tipos de card de aditivo (valor/prazo/outros) — extraído
+// pra não ter a mesma marcação copiada 3x (achado do code-review).
+function adRowHeader(a){
+  return `<div class="adrow-h"><span class="adnum">Aditivo ${fmtVal(a.nr_aditivo)}</span><span class="chip">${fmtVal(a.tipo_aditivo)}</span><span class="addate">${fmtDateBR(a.data_assinatura)}</span></div>
+    <div class="adproto">Processo ${fmtVal(a.nr_protocolo)}</div>`;
+}
+function buildAditivosPane(o,raw){
+  const list=(o.aditivos||[]);
+  const orig=num(raw.valor_original);
+  // o.valor já veio de mapRow() com o fallback valor_atual_contrato→valor_atual→
+  // valor_original — usar raw.valor_atual_contrato direto aqui reintroduziria o caso
+  // (raro, mas é por isso que o fallback existe) de um contrato com esse campo
+  // zerado/nulo mas valor_atual ou valor_original preenchidos.
+  const kpis=`<div class="mkpis">
+    <div class="mkpi"><div class="l">Valor original</div><div class="v">${BRL2.format(orig)}</div></div>
+    <div class="mkpi"><div class="l">Total aditivos</div><div class="v">${BRL2.format(num(raw.total_aditivo))}</div></div>
+    <div class="mkpi"><div class="l">Valor atual do contrato</div><div class="v">${BRL2.format(o.valor)}</div></div>
+  </div>`;
+  if(!list.length) return kpis+`<div class="msec">Aditivos</div><div class="empty">Nenhum aditivo registrado para este contrato.</div>`;
+  const hasValor=a=>!!(num(a.valor_aprovado)||num(a.valor_supressao)||num(a.valor_repercussao));
+  const hasPrazo=a=>!!(num(a.execucao_aprovado)||num(a.prazo_aprovado));
+  const valorList=list.filter(hasValor);
+  const prazoList=list.filter(hasPrazo);
+  const outrosList=list.filter(a=>!hasValor(a)&&!hasPrazo(a));
+  const pct=v=>orig?(v/orig*100):0;
+
+  let valorBlock='';
+  if(valorList.length){
+    const acres=valorList.reduce((s,a)=>s+num(a.valor_aprovado),0);
+    const supr=valorList.reduce((s,a)=>s+num(a.valor_supressao),0);
+    const reperc=valorList.reduce((s,a)=>s+num(a.valor_repercussao),0);
+    const bars=divergingBars([
+      {label:'Acréscimo',pct:pct(acres),color:TOKENS.ng,valLabel:`${BRL2.format(acres)} (${fmtPct1(pct(acres))}%)`},
+      {label:'Supressão',pct:-pct(supr),color:TOKENS.statusStop,valLabel:`${BRL2.format(supr)} (${fmtPct1(pct(supr))}%)`},
+      {label:'Repercussão',pct:pct(reperc),color:reperc<0?TOKENS.statusStop:TOKENS.ng,valLabel:`${BRL2.format(reperc)} (${fmtPct1(pct(reperc))}%)`},
+    ]);
+    const rows=valorList.map(a=>{
+      const repClass=num(a.valor_repercussao)<0?'ad-neg':'ad-pos';
+      return `<div class="adrow">
+        ${adRowHeader(a)}
+        <div class="advals">
+          <div><div class="l">Acréscimo</div><div class="d ad-pos">${BRL2.format(num(a.valor_aprovado))}</div></div>
+          <div><div class="l">Supressão</div><div class="d ad-neg">${BRL2.format(num(a.valor_supressao))}</div></div>
+          <div><div class="l">Repercussão</div><div class="d ${repClass}">${BRL2.format(num(a.valor_repercussao))}</div></div>
+        </div>
+      </div>`;
+    }).join('');
+    valorBlock=`<div class="msec">Aditivos de valor (${valorList.length})</div>${bars}${adToggle('mAdValList',valorList.length,'de valor')}<div class="adlist" id="mAdValList" hidden>${rows}</div>`;
+  }
+
+  let prazoBlock='';
+  if(prazoList.length){
+    const gauges=timelineGauge('Execução',raw.data_inicio_real,raw.data_fim_previsto)
+      +timelineGauge('Vigência',raw.data_inicio_real,raw.data_fim_vigencia_contrato);
+    const rows=prazoList.map(a=>{
+      const prazoTxt=[num(a.execucao_aprovado)?`Execução +${NUM.format(a.execucao_aprovado)} dias`:'',num(a.prazo_aprovado)?`Vigência +${NUM.format(a.prazo_aprovado)} dias`:'']
+        .filter(Boolean).join(' · ');
+      return `<div class="adrow">
+        ${adRowHeader(a)}
+        ${prazoTxt?`<div class="adprazo">${prazoTxt}</div>`:''}
+      </div>`;
+    }).join('');
+    prazoBlock=`<div class="msec">Aditivos de prazo (${prazoList.length})</div><div class="tl-wrap">${gauges}</div>${adToggle('mAdPrazoList',prazoList.length,'de prazo')}<div class="adlist" id="mAdPrazoList" hidden>${rows}</div>`;
+  }
+
+  let outrosBlock='';
+  if(outrosList.length){
+    const rows=outrosList.map(a=>`<div class="adrow">${adRowHeader(a)}</div>`).join('');
+    outrosBlock=`<div class="msec">Outros aditivos (${outrosList.length})</div><div class="adlist">${rows}</div>`;
+  }
+
+  return kpis+valorBlock+prazoBlock+outrosBlock;
+}
+// total_medido/percentual_total_medido vêm prontos de ficha_contrato (mesma origem/
+// escopo já usada pros outros totais do contrato) — evita somar as dezenas de linhas
+// mensais de medições no cliente só pra chegar num número que a base já calcula.
+function buildMedicoesPane(o,raw){
+  const f=o.ficha;
+  if(!f) return `<div class="empty">Sem dados de medição disponíveis para este contrato.</div>`;
+  const total=num(f.total_medido), pct=num(f.percentual_total_medido);
+  // o.valor: mesmo fallback valor_atual_contrato→valor_atual→valor_original de
+  // mapRow() — ver comentário equivalente em buildAditivosPane().
+  const atual=o.valor, restante=Math.max(0,atual-total);
+  const kpis=`<div class="mkpis">
+    <div class="mkpi"><div class="l">Total medido</div><div class="v">${BRL2.format(total)}</div></div>
+    <div class="mkpi"><div class="l">% medido</div><div class="v">${fmtPct1(pct)}%</div></div>
+  </div>`;
+  // o anel é uma forma física (não passa de 100%) — centro/aria-label têm que descrever
+  // o que o anel de fato desenha, não o "% medido" bruto da KPI acima (que pode passar
+  // de 100% num artefato de dado/arredondamento; a KPI mostra esse número sem clamp).
+  const pctRing=Math.max(0,Math.min(100,pct));
+  const donut=`<div class="donut-wrap"><div class="donut-box">${donutGauge(pctRing,TOKENS.ng)}<div class="donut-center">${pctRing.toFixed(0)}%</div></div>
+    ${pieLegend([{label:'Medido',color:TOKENS.ng,pctLabel:BRL2.format(total)},{label:'Restante',neutral:true,pctLabel:BRL2.format(restante)}])}</div>`;
+  return kpis+`<div class="msec">Medições</div>${donut}`;
 }
 function openModal(o){
   const raw=o.raw||{};
@@ -849,9 +1078,9 @@ function openModal(o){
     ['MUNICÍPIO', fmtVal(raw.municipio||o.municipioTxt)],
     ['DISTRITO OPERACIONAL', fmtVal(raw.distrito_operacional)],
   ];
-  const comissao=(o.comissao&&o.comissao.length)
-    ? o.comissao.map(m=>[fmtVal(m.tipo).toUpperCase(), fmtVal(m.nome)])
-    : [['FISCAL', fmtVal(o.fiscal)]];
+  const comissaoFull=(o.comissao&&o.comissao.length)?o.comissao:[];
+  const fiscalTipo=comissaoFull[0]?comissaoFull[0].tipo:(o.fiscalTipo||'FISCAL');
+  const fiscalNome=comissaoFull[0]?comissaoFull[0].nome:(o.fiscal||'—');
   const contrato=[
     ['Nº DO CONTRATO', fmtContratoExt(raw.nr_contrato_ext)],
     ['CÓDIGO DA OBRA', fmtVal(raw.codigo_obra)],
@@ -868,25 +1097,64 @@ function openModal(o){
     ['CONTRATANTE', fmtVal(raw.contratante)],
     ['CNPJ CONTRATANTE', fmtCNPJ(raw.cnpj_contratante)],
   ];
-  const valores=[
-    ['VALOR ORIGINAL', fmtNumBR(raw.valor_original)],
-    ['TOTAL ADITIVOS', fmtNumBR(raw.total_aditivo)],
-    ['VALOR ATUAL DO CONTRATO', fmtNumBR(raw.valor_atual_contrato)],
-  ];
+  const geralHTML=mSection('Dados da obra',obra)
+    +`<div class="mfiscal"><div class="l">${escHtml(fiscalTipo)}</div><div class="d">${escHtml(fiscalNome)}`
+      +(comissaoFull.length>1?` <button type="button" class="mcomBtn" id="mComBtn" aria-expanded="false" aria-controls="mComList" title="Ver comissão completa de fiscalização">Comissão completa (${comissaoFull.length}) ▾</button>`:'')
+      +`</div></div>`
+    +(comissaoFull.length>1?`<div class="mcomlist" id="mComList" hidden>${comissaoFull.map(m=>`<div class="mcomrow"><span class="mcomtipo">${escHtml(m.tipo)}</span><span class="mcomnome">${escHtml(m.nome)}</span></div>`).join('')}</div>`:'')
+    +mSection('Dados do contrato',contrato)
+    +mSection('Dados do contratado',contratado)
+    +mSection('Dados do contratante',contratante);
+  const aditivosHTML=buildAditivosPane(o,raw);
+  const medicoesHTML=buildMedicoesPane(o,raw);
   document.getElementById('modal').innerHTML=
-    `<div class="mh"><div class="mt">DADOS DO CONTRATO Nº ${fmtContratoExt(raw.nr_contrato_ext)}</div><button class="mx" id="modalX" aria-label="Fechar">✕</button></div>
+    `<div class="mtop">
+       <div class="mh"><div class="mt">DADOS DO CONTRATO Nº ${fmtContratoExt(raw.nr_contrato_ext)}</div><button class="mx" id="modalX" aria-label="Fechar">✕</button></div>
+       <div class="mtabs" role="tablist">
+         <button type="button" class="mtab on" role="tab" aria-selected="true" aria-controls="mPaneGeral" data-tab="geral">Dados Gerais</button>
+         <button type="button" class="mtab" role="tab" aria-selected="false" aria-controls="mPaneAditivos" data-tab="aditivos">Aditivos</button>
+         <button type="button" class="mtab" role="tab" aria-selected="false" aria-controls="mPaneMedicoes" data-tab="medicoes">Medições</button>
+       </div>
+     </div>
      <div class="mbody">
        <div class="mobj">${escHtml(o.objeto)}</div>
-       ${mSection('Dados da obra',obra)}
-       ${mSection('Comissão de fiscalização',comissao)}
-       ${mSection('Dados do contrato',contrato)}
-       ${mSection('Dados do contratado',contratado)}
-       ${mSection('Dados do contratante',contratante)}
-       ${mSection('Valores',valores)}
+       <div class="mpane" id="mPaneGeral" role="tabpanel" data-pane="geral">${geralHTML}</div>
+       <div class="mpane" id="mPaneAditivos" role="tabpanel" data-pane="aditivos" hidden>${aditivosHTML}</div>
+       <div class="mpane" id="mPaneMedicoes" role="tabpanel" data-pane="medicoes" hidden>${medicoesHTML}</div>
        <div class="mupd">Atualizado em ${fmtDateTimeBR(raw.atualizado_em)}</div>
      </div>`;
   document.getElementById('modalBg').classList.add('show');
   document.getElementById('modalX').onclick=closeModal;
+  wireModalTabs();
+  wireAdToggles();
+  const comBtn=document.getElementById('mComBtn');
+  if(comBtn) comBtn.onclick=()=>{
+    const el=document.getElementById('mComList'); const willOpen=el.hidden;
+    el.hidden=!willOpen; comBtn.setAttribute('aria-expanded',String(willOpen));
+    comBtn.innerHTML=`Comissão completa (${comissaoFull.length}) ${willOpen?'▴':'▾'}`;
+  };
+}
+// troca de aba: cada openModal() reconstrói o innerHTML do zero, então os listeners
+// são refeitos a cada abertura — igual ao padrão já usado pro botão de fechar/comissão.
+function wireModalTabs(){
+  const tabs=[...document.querySelectorAll('.modal .mtab')];
+  tabs.forEach(t=>t.onclick=()=>{
+    tabs.forEach(x=>{ const on=x===t; x.classList.toggle('on',on); x.setAttribute('aria-selected',String(on)); });
+    document.querySelectorAll('.modal .mpane').forEach(p=>{ p.hidden=p.dataset.pane!==t.dataset.tab; });
+  });
+}
+// mesmo padrão do botão de comissão (Dados Gerais), generalizado pros 2 toggles de
+// lista de aditivo (valor/prazo) — reconstruído a cada openModal(), então não precisa
+// de delegação de evento nem de limpar listener velho.
+function wireAdToggles(){
+  document.querySelectorAll('.modal .adToggle').forEach(btn=>{
+    btn.onclick=()=>{
+      const el=document.getElementById(btn.dataset.target); if(!el) return;
+      const willOpen=el.hidden;
+      el.hidden=!willOpen; btn.setAttribute('aria-expanded',String(willOpen));
+      btn.querySelector('.adToggle-car').textContent=willOpen?'▴':'▾';
+    };
+  });
 }
 function closeModal(){ document.getElementById('modalBg').classList.remove('show'); }
 document.getElementById('modalBg').addEventListener('click',e=>{ if(e.target.id==='modalBg') closeModal(); });

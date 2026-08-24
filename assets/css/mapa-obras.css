@@ -349,7 +349,7 @@
   .modal{width:min(880px,96vw);max-height:90vh;overflow:auto;background:linear-gradient(180deg,var(--bg-modal),var(--bg-modal-2));
          border:1px solid rgba(var(--ng-rgb),.25);border-radius:16px;box-shadow:0 24px 70px rgba(var(--ink-rgb),.6);padding:0}
   .modal::-webkit-scrollbar{width:8px}.modal::-webkit-scrollbar-thumb{background:rgba(var(--ng-rgb),.2);border-radius:8px}
-  .modal .mh{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+  .modal .mh{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
          background:linear-gradient(180deg,var(--bg-modal),var(--bg-modal) 80%,transparent);padding:22px 26px 14px;border-bottom:1px solid rgba(var(--white-rgb),.08)}
   .modal .mt{font-family:Montserrat,sans-serif;font-size:19px;font-weight:700;color:var(--ng-mid)}
   .modal .mx{border:1px solid rgba(var(--white-rgb),.14);background:rgba(var(--white-rgb),.05);color:var(--text-base);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:15px;flex:none;font-family:Montserrat,sans-serif}
@@ -363,6 +363,92 @@
   .modal .mgrid .l{font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);font-family:Montserrat,sans-serif}
   .modal .mgrid .d{font-size:14px;color:var(--text-data);font-weight:600;margin-top:3px;word-break:break-word;font-family:Montserrat,sans-serif}
   .modal .mupd{font-size:10px;color:var(--text-dimmer);margin-top:18px;padding-top:12px;border-top:1px solid rgba(var(--white-rgb),.08);font-family:Montserrat,sans-serif}
+  /* abas do modal (Dados Gerais/Aditivos/Medições) — cabeçalho+trilha de abas ficam
+     juntos num wrapper sticky (em vez de só .mh) pra não precisar cravar um top:Npx
+     fixo pra .mtabs; o fade da .mh original continua servindo de transição visual
+     pro fundo sólido da trilha logo abaixo, dentro do mesmo bloco fixo no topo. */
+  .modal .mtop{position:sticky;top:0;z-index:2;background:var(--bg-modal)}
+  .modal .mtop .mh{border-bottom:0}
+  .modal .mtabs{display:flex;gap:6px;padding:0 26px 14px;overflow-x:auto;border-bottom:1px solid rgba(var(--white-rgb),.08)}
+  .modal .mtab{flex:none;cursor:pointer;border:1px solid var(--card-border);background:var(--card-bg-2);color:var(--text-muted);
+        border-radius:999px;padding:7px 16px;font-family:Montserrat,sans-serif;font-size:11.5px;font-weight:700;letter-spacing:.3px;transition:.15s}
+  .modal .mtab:hover{border-color:rgba(var(--ng-rgb),.35);color:var(--text-bright)}
+  .modal .mtab.on{background:rgba(var(--ng-rgb),.14);border-color:rgba(var(--ng-rgb),.45);color:var(--ng-light)}
+  .modal .mtab:focus-visible{outline:2px solid var(--ng);outline-offset:2px}
+  /* KPIs compactos dentro das abas Aditivos/Medições — mesma linguagem visual do
+     .kpi do painel lateral, mas em grid próprio (auto-fit: 2 ou 3 itens ocupam a
+     largura igualmente, sem herdar o grid-template-columns:1fr 1fr fixo de .kpis) */
+  .modal .mkpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:4px 0 6px}
+  .modal .mkpi{border:1px solid var(--card-border);background:var(--card-bg-2);border-radius:12px;padding:13px 14px}
+  .modal .mkpi .l{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-label)}
+  .modal .mkpi .v{font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700;color:var(--text-brightest);margin-top:6px;line-height:1.15;word-break:break-word}
+  /* fiscal + botão discreto pra ver a comissão completa (Dados da obra) */
+  .modal .mfiscal{margin-top:14px}
+  .modal .mfiscal .l{font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
+  .modal .mfiscal .d{font-size:14px;color:var(--text-data);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .modal .mcomBtn{border:1px solid var(--card-border);background:var(--card-bg-2);color:var(--text-label);
+        border-radius:999px;padding:3px 11px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:Montserrat,sans-serif;transition:.15s}
+  .modal .mcomBtn:hover{border-color:rgba(var(--ng-rgb),.35);color:var(--text-bright)}
+  .modal .mcomlist{margin-top:10px;border:1px solid var(--card-border);border-radius:12px;padding:4px 14px;background:var(--card-bg-2)}
+  .modal .mcomrow{display:flex;justify-content:space-between;gap:12px;padding:8px 0;font-size:12.5px}
+  .modal .mcomrow+.mcomrow{border-top:1px solid rgba(var(--white-rgb),.06)}
+  .modal .mcomtipo{color:var(--text-label);font-weight:700;font-size:10.5px;letter-spacing:.3px;text-transform:uppercase;flex:none}
+  .modal .mcomnome{color:var(--text-data);font-weight:600;text-align:right}
+  /* anel/gauge (Medições) — layout chart+legenda lado a lado; legenda reutilizada
+     também pela barra de repercussão zerada da aba Aditivos (caso raro) */
+  .modal .donut-wrap{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:14px 0 4px}
+  .modal .donut-box{flex:none;position:relative}
+  .modal .pie-leg{display:flex;flex-direction:column;gap:8px}
+  .modal .pie-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-muted);font-weight:600}
+  .modal .pie-dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .modal .pie-dot.neutral{background:rgba(var(--white-rgb),.18)}
+  .modal .pie-l{min-width:84px}
+  .modal .pie-v{color:var(--text-brightest);font-family:'Space Grotesk',sans-serif;font-weight:700}
+  .modal .donut-track{stroke:rgba(var(--white-rgb),.09)}
+  .modal .donut-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+        font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:700;color:var(--text-brightest)}
+  /* barras DIVERGENTES Acréscimo/Supressão/Repercussão (aba Aditivos, aditivos de
+     valor) — eixo zero ao centro (.divbar-mid): Acréscimo cresce pra direita,
+     Supressão pra esquerda (sinal invertido só no cálculo da barra, o rótulo mostra
+     valor positivo — é assim em todo o resto do modal), Repercussão pro lado que o
+     sinal real dela mandar. overflow:visible pro tick do meio não cortar. */
+  .modal .divbars{margin:14px 0 4px;display:flex;flex-direction:column;gap:14px}
+  .modal .divbar-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12.5px}
+  .modal .divbar-l{color:var(--text-muted);font-weight:600}
+  .modal .divbar-v{font-family:'Space Grotesk',sans-serif;font-weight:700}
+  .modal .divbar-track{position:relative;height:8px;border-radius:5px;background:rgba(var(--white-rgb),.07);margin-top:8px;overflow:visible}
+  .modal .divbar-mid{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:rgba(var(--white-rgb),.3);transform:translateX(-1px)}
+  .modal .divbar-fill{position:absolute;top:0;bottom:0;border-radius:5px}
+  /* botão discreto que expande a lista de cards de aditivo (valor/prazo) — mesmo
+     visual do botão "Comissão completa" de Dados Gerais */
+  .modal .adToggle{margin-top:14px;border:1px solid var(--card-border);background:var(--card-bg-2);color:var(--text-label);
+        border-radius:999px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;font-family:Montserrat,sans-serif;transition:.15s}
+  .modal .adToggle:hover{border-color:rgba(var(--ng-rgb),.35);color:var(--text-bright)}
+  /* prazo (aditivos de prazo) — início→fim com marcação de "já passado" e dias
+     restantes/vencidos; datas vêm de contratos_edificacao (já refletem os aditivos
+     de prazo aprovados até hoje, não precisa somar aditivo a aditivo). */
+  .modal .tl-wrap{margin:14px 0 4px;display:flex;flex-direction:column;gap:16px}
+  .modal .tl-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12.5px}
+  .modal .tl-l{color:var(--text-muted);font-weight:600}
+  .modal .tl-days{font-family:'Space Grotesk',sans-serif;font-weight:700}
+  .modal .tl-track{height:8px;border-radius:5px;background:rgba(var(--white-rgb),.07);margin-top:6px;overflow:hidden}
+  .modal .tl-track>i{display:block;height:100%;border-radius:5px}
+  .modal .tl-dates{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-dimmer);margin-top:5px}
+  /* lista de aditivos */
+  .modal .adlist{margin-top:8px}
+  .modal .adrow{border:1px solid var(--card-border);background:var(--card-bg-2);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+  .modal .adrow-h{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:13px}
+  .modal .adnum{font-weight:700;color:var(--text-bright);font-family:'Space Grotesk',sans-serif}
+  .modal .addate{margin-left:auto;font-size:11px;color:var(--text-dim);font-weight:600}
+  .modal .adproto{font-size:11px;color:var(--text-dim);margin-top:5px}
+  .modal .advals{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;margin-top:10px}
+  .modal .advals .l{font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--text-dim)}
+  .modal .advals .d{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;margin-top:2px}
+  .modal .ad-pos{color:var(--ng-light)}
+  .modal .ad-neg{color:var(--status-stop-text)}
+  .modal .adprazo{margin-top:9px;font-size:11.5px;color:var(--amber-text);font-weight:600}
+  @media (max-width:640px){ .modal .mkpis{grid-template-columns:1fr 1fr} .modal .advals{grid-template-columns:1fr 1fr} }
+  @media (max-width:420px){ .modal .mkpis{grid-template-columns:1fr} }
   .rev{margin-top:11px;font-size:11.5px;color:var(--text-body2);line-height:1.5}
   .rev b{color:var(--ng-light);font-family:'Space Grotesk',sans-serif}
   .empty{color:var(--text-dim);font-size:12.5px;padding:10px 0}

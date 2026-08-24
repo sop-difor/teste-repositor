@@ -13,3 +13,5 @@ supabase/.temp/
 server/whatsapp-proxy/chaves-vm-gecope/
 *.key
 *.key.pub
+supabase_key.txt
+token_sigsop.txt
