@@ -143,10 +143,16 @@ async function tick() {
 
   if (shouldRestartManual || shouldRestartAuto) {
     console.log(`[watchdog] Reiniciando ${EVO_CONTAINER_NAME} (motivo: ${shouldRestartManual ? 'pedido manual' : 'degradado sustentado'}).`);
+    // Cooldown é gravado ANTES da tentativa, não só em caso de sucesso. Incidente real
+    // (2026-08-24): quando restartEvolutionContainer() falhava (ex.: Docker sobrecarregado
+    // por restarts em sequência, socket dando timeout), o cooldown nunca era ativado — o
+    // watchdog tentava de novo a cada ciclo (30s), sem parar, cada tentativa interrompendo
+    // o boot do evolution-api no meio (~10s para subir). Isso o impedia de terminar de
+    // subir para sempre, e só um `docker stop` manual no watchdog quebrava o loop.
+    const now = Date.now();
+    if (shouldRestartManual) lastManualRestartAt = now; else lastAutoRestartAt = now;
     try {
       await restartEvolutionContainer();
-      const now = Date.now();
-      if (shouldRestartManual) lastManualRestartAt = now; else lastAutoRestartAt = now;
       await updateControlRow({ last_restarted_at: new Date().toISOString() });
     } catch (err) {
       console.error('[watchdog] falha ao reiniciar container:', err.message);
