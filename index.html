@@ -2658,6 +2658,43 @@
                                                         </select>
                                                     </div>
                                                 </div>
+                                                <div class="row g-3 align-items-end mt-1">
+                                                    <div class="col-md-4">
+                                                        <label
+                                                            class="form-label small fw-bold text-muted text-uppercase"
+                                                            style="font-size: 0.7rem;">Código da Obra (SIGSOP)</label>
+                                                        <input type="text"
+                                                            class="form-control form-control-sm bg-light border-0 shadow-none gp-plain-field"
+                                                            id="det_codigo_obra" placeholder="Ex.: 05872025SEDUC01">
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <label
+                                                            class="form-label small fw-bold text-muted text-uppercase"
+                                                            style="font-size: 0.7rem;">Distrito Operacional</label>
+                                                        <input type="text"
+                                                            class="form-control form-control-sm bg-light border-0 shadow-none gp-plain-field"
+                                                            id="det_distrito">
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <label
+                                                            class="form-label small fw-bold text-muted text-uppercase"
+                                                            style="font-size: 0.7rem;">Município</label>
+                                                        <input type="text"
+                                                            class="form-control form-control-sm bg-light border-0 shadow-none gp-plain-field"
+                                                            id="det_municipio">
+                                                    </div>
+                                                    <div class="col-md-2">
+                                                        <button type="button"
+                                                            class="btn btn-outline-primary btn-sm w-100"
+                                                            id="btn-vincular-obra" onclick="buscarObraDetalhes()"><i
+                                                                class="bi bi-search"></i> Vincular</button>
+                                                    </div>
+                                                    <div class="col-12">
+                                                        <div id="det_obra_status" class="form-text">Restrito a
+                                                            administradores — vincula ou atualiza este processo a um
+                                                            contrato/obra do SIGSOP pelo Código da Obra.</div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -3914,199 +3951,203 @@
                                         </div>
                                         <div class="modal-body p-4 bg-light-subtle">
                                             <form id="formCadastro">
-                                                <div class="row g-4">
-                                                    <div class="col-lg-7">
-                                                        <div class="card border-0 shadow-sm mb-4">
-                                                            <div class="card-header bg-white py-3">
-                                                                <h6 class="mb-0 fw-bold text-dark"><i
-                                                                        class="bi bi-info-circle me-2 text-primary"></i>INFORMAÇÕES
-                                                                    GERAIS</h6>
+                                                <div class="card border-0 shadow-sm mb-4 border-start border-primary border-4">
+                                                    <div class="card-body py-2 px-3">
+                                                        <div class="d-flex align-items-center gap-3 flex-wrap">
+                                                            <label
+                                                                class="form-label small fw-bold text-muted text-uppercase mb-0 flex-shrink-0"
+                                                                style="font-size: 0.7rem;"
+                                                                title="Preenche automaticamente Descrição, Fiscal, Contratante, Contratada, Distrito e Município."><i
+                                                                    class="bi bi-magic me-1 text-primary"></i>Vincular
+                                                                pela Obra (SIGSOP)</label>
+                                                            <div class="input-group input-group-sm"
+                                                                style="max-width: 360px;">
+                                                                <input type="text" class="form-control"
+                                                                    id="cad_codigo_obra"
+                                                                    placeholder="Ex.: 05872025SEDUC01"
+                                                                    onkeydown="if(event.key==='Enter'){event.preventDefault();buscarObraCadastro();}">
+                                                                <button type="button" class="btn btn-primary"
+                                                                    id="btn-buscar-obra"
+                                                                    title="Buscar obra no SIGSOP"
+                                                                    onclick="buscarObraCadastro()"><i
+                                                                        class="bi bi-search"></i></button>
                                                             </div>
-                                                            <div class="card-body">
-                                                                <div class="row g-3">
-                                                                    <div class="col-md-6">
-                                                                        <label
-                                                                            class="form-label small fw-bold text-muted text-uppercase"
-                                                                            style="font-size: 0.7rem;">Número do
-                                                                            Processo</label>
-                                                                        <input name="PROCESSO N." type="text"
-                                                                            class="form-control form-control-lg bg-light border-0 fw-bold text-primary"
-                                                                            id="cad_processo"
-                                                                            placeholder="00000.000000/0000-00" required
-                                                                            oninput="this.value = mascaraProcesso(this.value)">
-                                                                    </div>
-                                                                    <div class="col-md-6">
-                                                                        <label
-                                                                            class="form-label small fw-bold text-muted text-uppercase"
-                                                                            style="font-size: 0.7rem;">Status
-                                                                            Inicial</label>
-                                                                        <select name="STATUS" id="cad_status"
-                                                                            class="form-select form-select-lg border-primary-subtle text-primary fw-bold"
-                                                                            required>
-                                                                            <option value="" selected>Selecionar Status
-                                                                            </option>
-                                                                            <option value="AGUAR. ANÁLISE">AGUAR.
-                                                                                ANÁLISE</option>
-                                                                            <option value="AGUAR. APROVAÇÃO">AGUAR.
-                                                                                APROVAÇÃO</option>
-                                                                            <option value="AGUAR. REANÁLISE">AGUAR.
-                                                                                REANÁLISE</option>
-                                                                            <option value="ANÁLISE FISCAL">ANÁLISE
-                                                                                FISCAL</option>
-                                                                            <option value="APROVADO">APROVADO</option>
-                                                                            <option value="ARQUIVADO">ARQUIVADO</option>
-                                                                            <option value="CONTRATANTE">CONTRATANTE
-                                                                            </option>
-                                                                            <option
-                                                                                value="DEVOLVIDO P/ REANÁLISE FISCAL">
-                                                                                DEVOLVIDO P/ REANÁLISE FISCAL</option>
-                                                                            <option value="DILIGÊNCIA">DILIGÊNCIA
-                                                                            </option>
-                                                                            <option value="EM ANÁLISE">EM ANÁLISE
-                                                                            </option>
-                                                                            <option value="EM REANÁLISE">EM REANÁLISE
-                                                                            </option>
-                                                                        </select>
-                                                                    </div>
-                                                                    <div class="col-md-6">
-                                                                        <label
-                                                                            class="form-label small fw-bold text-muted text-uppercase"
-                                                                            style="font-size: 0.7rem;">Tipologia</label>
-                                                                        <input name="TIPO" type="text"
-                                                                            class="form-control" id="cad_tipo" required>
-                                                                    </div>
-                                                                    <div class="col-md-6">
-                                                                        <label
-                                                                            class="form-label small fw-bold text-muted text-uppercase"
-                                                                            style="font-size: 0.7rem;">Fiscal
-                                                                            Responsável</label>
-                                                                        <select name="FISCAL" id="cad-fiscal"
-                                                                            class="form-select" required>
-                                                                            <option value="">Selecione...</option>
-                                                                        </select>
-                                                                    </div>
-                                                                    <div class="col-12">
-                                                                        <label
-                                                                            class="form-label small fw-bold text-muted text-uppercase"
-                                                                            style="font-size: 0.7rem;">Descrição do
-                                                                            Objeto</label>
-                                                                        <textarea name="DESCRIÇÃO" id="cad_descricao"
-                                                                            class="form-control" rows="5"
-                                                                            style="font-size: 0.9rem; min-height: 100px;"
-                                                                            required></textarea>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
+                                                            <div id="cad_obra_status"
+                                                                class="form-text mb-0 small"></div>
                                                         </div>
-
-                                                        <div class="card border-0 shadow-sm">
-                                                            <div class="card-header bg-white py-3">
-                                                                <h6 class="mb-0 fw-bold text-dark"><i
-                                                                        class="bi bi-cash-stack me-2 text-success"></i>ANÁLISE
-                                                                    FINANCEIRA</h6>
+                                                    </div>
+                                                </div>
+                                                <div class="card border-0 shadow-sm mb-4">
+                                                    <div class="card-header bg-white py-3">
+                                                        <h6 class="mb-0 fw-bold text-dark"><i
+                                                                class="bi bi-info-circle me-2 text-primary"></i>INFORMAÇÕES
+                                                            GERAIS</h6>
+                                                    </div>
+                                                    <div class="card-body">
+                                                        <div class="row g-3">
+                                                            <div class="col-md-4">
+                                                                <label
+                                                                    class="form-label small fw-bold text-muted text-uppercase"
+                                                                    style="font-size: 0.7rem;">Número do
+                                                                    Processo</label>
+                                                                <input name="PROCESSO N." type="text"
+                                                                    class="form-control bg-light border-0 fw-bold text-primary"
+                                                                    id="cad_processo"
+                                                                    placeholder="00000.000000/0000-00" required
+                                                                    oninput="this.value = mascaraProcesso(this.value)">
                                                             </div>
-                                                            <div class="card-body">
-                                                                <div class="row g-3">
-                                                                    <div class="col-md-6">
-                                                                        <label
-                                                                            class="form-label small text-muted">Acréscimo
-                                                                            (FISCAL)</label>
-                                                                        <input id="acresc_fisc"
-                                                                            class="form-control mask-money"
-                                                                            value="0,00">
-                                                                    </div>
-                                                                    <div class="col-md-6">
-                                                                        <label
-                                                                            class="form-label small text-muted">Supressão
-                                                                            (FISCAL)</label>
-                                                                        <input id="supress_fisc"
-                                                                            class="form-control mask-money text-danger"
-                                                                            value="0,00">
-                                                                    </div>
-                                                                </div>
+                                                            <div class="col-md-4">
+                                                                <label
+                                                                    class="form-label small fw-bold text-muted text-uppercase"
+                                                                    style="font-size: 0.7rem;">Status
+                                                                    Inicial</label>
+                                                                <select name="STATUS" id="cad_status"
+                                                                    class="form-select border-primary-subtle text-primary fw-bold"
+                                                                    required>
+                                                                    <option value="" selected>Selecionar Status
+                                                                    </option>
+                                                                    <option value="AGUAR. ANÁLISE">AGUAR.
+                                                                        ANÁLISE</option>
+                                                                    <option value="AGUAR. APROVAÇÃO">AGUAR.
+                                                                        APROVAÇÃO</option>
+                                                                    <option value="AGUAR. REANÁLISE">AGUAR.
+                                                                        REANÁLISE</option>
+                                                                    <option value="ANÁLISE FISCAL">ANÁLISE
+                                                                        FISCAL</option>
+                                                                    <option value="APROVADO">APROVADO</option>
+                                                                    <option value="ARQUIVADO">ARQUIVADO</option>
+                                                                    <option value="CONTRATANTE">CONTRATANTE
+                                                                    </option>
+                                                                    <option
+                                                                        value="DEVOLVIDO P/ REANÁLISE FISCAL">
+                                                                        DEVOLVIDO P/ REANÁLISE FISCAL</option>
+                                                                    <option value="DILIGÊNCIA">DILIGÊNCIA
+                                                                    </option>
+                                                                    <option value="EM ANÁLISE">EM ANÁLISE
+                                                                    </option>
+                                                                    <option value="EM REANÁLISE">EM REANÁLISE
+                                                                    </option>
+                                                                </select>
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label
+                                                                    class="form-label small fw-bold text-muted text-uppercase"
+                                                                    style="font-size: 0.7rem;">Tipologia</label>
+                                                                <input name="TIPO" type="text"
+                                                                    class="form-control" id="cad_tipo" required>
+                                                            </div>
+                                                            <div class="col-12">
+                                                                <label
+                                                                    class="form-label small fw-bold text-muted text-uppercase"
+                                                                    style="font-size: 0.7rem;">Descrição do
+                                                                    Objeto</label>
+                                                                <textarea name="DESCRIÇÃO" id="cad_descricao"
+                                                                    class="form-control" rows="4"
+                                                                    style="font-size: 0.9rem; min-height: 80px;"
+                                                                    required></textarea>
+                                                            </div>
+                                                            <div class="col-12" id="cad_comissao_wrap"
+                                                                style="display:none;">
+                                                                <div class="form-text mb-1">Comissão de
+                                                                    fiscalização da obra — clique para definir
+                                                                    como Fiscal Responsável:</div>
+                                                                <div id="cad_comissao_lista"
+                                                                    class="d-flex flex-wrap gap-2"></div>
                                                             </div>
                                                         </div>
                                                     </div>
+                                                </div>
 
-                                                    <div class="col-lg-5">
-                                                        <div class="card border-0 shadow-sm mb-4">
-                                                            <div class="card-header bg-white py-3">
-                                                                <h6 class="mb-0 fw-bold text-dark"><i
-                                                                        class="bi bi-people me-2 text-info"></i>AGENTES
-                                                                    DO CONTRATO</h6>
+                                                <div class="card border-0 shadow-sm mb-4">
+                                                    <div class="card-header bg-white py-3">
+                                                        <h6 class="mb-0 fw-bold text-dark"><i
+                                                                class="bi bi-people me-2 text-info"></i>AGENTES
+                                                            DO CONTRATO</h6>
+                                                    </div>
+                                                    <div class="card-body">
+                                                        <div class="row g-3">
+                                                            <div class="col-md-3">
+                                                                <label
+                                                                    class="form-label small fw-bold text-muted text-uppercase"
+                                                                    style="font-size: 0.7rem;">Fiscal
+                                                                    Responsável</label>
+                                                                <select name="FISCAL" id="cad-fiscal"
+                                                                    class="form-select" required>
+                                                                    <option value="">Selecione...</option>
+                                                                </select>
                                                             </div>
-                                                            <div class="card-body">
-                                                                <div class="mb-3">
-                                                                    <label
-                                                                        class="form-label small fw-bold text-muted text-uppercase"
-                                                                        style="font-size: 0.7rem;">Contratante</label>
-                                                                    <input name="CONTRATANTE" id="cad_contratante"
-                                                                        class="form-control bg-light border-0"
-                                                                        style="font-size: 0.9rem;">
-                                                                </div>
-                                                                <div class="mb-3">
-                                                                    <label
-                                                                        class="form-label small fw-bold text-muted text-uppercase"
-                                                                        style="font-size: 0.7rem;">Contratada</label>
-                                                                    <input name="CONTRATADA" id="cad_contratada"
-                                                                        class="form-control bg-light border-0"
-                                                                        style="font-size: 0.9rem;">
-                                                                </div>
-                                                                <div class="mb-0">
-                                                                    <label
-                                                                        class="form-label small fw-bold text-muted text-uppercase"
-                                                                        style="font-size: 0.7rem;">Analista
-                                                                        Designado</label>
-                                                                    <select name="ANALISTA" id="cad_analista"
-                                                                        class="form-select bg-light border-0"
-                                                                        style="font-size: 0.9rem;">
-                                                                        <option value="">Selecione...</option>
-                                                                        <option value="A">Ada</option>
-                                                                        <option value="F">Felipe</option>
-                                                                        <option value="H">Helder</option>
-                                                                        <option value="N">Nildeno</option>
-                                                                        <option value="P">Pedro</option>
-                                                                        <option value="W">Walace</option>
-                                                                    </select>
-                                                                </div>
+                                                            <div class="col-md-3">
+                                                                <label
+                                                                    class="form-label small fw-bold text-muted text-uppercase"
+                                                                    style="font-size: 0.7rem;">Contratante</label>
+                                                                <input name="CONTRATANTE" id="cad_contratante"
+                                                                    class="form-control">
+                                                            </div>
+                                                            <div class="col-md-3">
+                                                                <label
+                                                                    class="form-label small fw-bold text-muted text-uppercase"
+                                                                    style="font-size: 0.7rem;">Contratada</label>
+                                                                <input name="CONTRATADA" id="cad_contratada"
+                                                                    class="form-control">
+                                                            </div>
+                                                            <div class="col-md-3">
+                                                                <label
+                                                                    class="form-label small fw-bold text-muted text-uppercase"
+                                                                    style="font-size: 0.7rem;">Analista
+                                                                    Designado</label>
+                                                                <select name="ANALISTA" id="cad_analista"
+                                                                    class="form-select">
+                                                                    <option value="">Selecione...</option>
+                                                                    <option value="A">Ada</option>
+                                                                    <option value="F">Felipe</option>
+                                                                    <option value="H">Helder</option>
+                                                                    <option value="N">Nildeno</option>
+                                                                    <option value="P">Pedro</option>
+                                                                    <option value="W">Walace</option>
+                                                                </select>
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <label
+                                                                    class="form-label small fw-bold text-muted text-uppercase"
+                                                                    style="font-size: 0.7rem;">Distrito
+                                                                    Operacional</label>
+                                                                <input id="cad_distrito" class="form-control">
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <label
+                                                                    class="form-label small fw-bold text-muted text-uppercase"
+                                                                    style="font-size: 0.7rem;">Município</label>
+                                                                <input id="cad_municipio" class="form-control">
                                                             </div>
                                                         </div>
+                                                    </div>
+                                                </div>
 
-                                                        <div class="card border-0 shadow-sm mb-4">
-                                                            <div class="card-header bg-white py-3">
-                                                                <h6 class="mb-0 fw-bold text-dark"><i
-                                                                        class="bi bi-calendar-check me-2 text-warning"></i>CRONOGRAMA
-                                                                    E METAS</h6>
+                                                <div class="card border-0 shadow-sm mb-4">
+                                                    <div class="card-header bg-white py-3">
+                                                        <h6 class="mb-0 fw-bold text-dark"><i
+                                                                class="bi bi-calendar-check me-2 text-warning"></i>CRONOGRAMA
+                                                            E METAS</h6>
+                                                    </div>
+                                                    <div class="card-body">
+                                                        <div class="row g-3">
+                                                            <div class="col-md-6">
+                                                                <label
+                                                                    class="form-label small text-muted mb-1">Data
+                                                                    Abertura</label>
+                                                                <input name="DATA DE ABERTURA"
+                                                                    id="cad_data_abertura"
+                                                                    class="form-control mask-date"
+                                                                    placeholder="dd/mm/aaaa">
                                                             </div>
-                                                            <div class="card-body">
-                                                                <div class="row g-3">
-                                                                    <div class="col-md-6">
-                                                                        <label
-                                                                            class="form-label small text-muted mb-1">Data
-                                                                            Abertura</label>
-                                                                        <input name="DATA DE ABERTURA"
-                                                                            id="cad_data_abertura"
-                                                                            class="form-control form-control-sm mask-date"
-                                                                            placeholder="dd/mm/aaaa">
-                                                                    </div>
-                                                                    <div class="col-md-6">
-                                                                        <label
-                                                                            class="form-label small text-muted mb-1">Recebimento</label>
-                                                                        <input name="DATA RECEBIMENTO"
-                                                                            id="cad_data_recebimento"
-                                                                            class="form-control form-control-sm mask-date"
-                                                                            placeholder="dd/mm/aaaa">
-                                                                    </div>
-                                                                    <div class="col-12 mt-2">
-                                                                        <label
-                                                                            class="form-label small text-muted mb-1">Meta
-                                                                            Fiscal</label>
-                                                                        <input name="DATA COMPROMISSO FISCAL"
-                                                                            id="cad_data_compromisso"
-                                                                            class="form-control form-control-sm mask-date border-warning-subtle"
-                                                                            placeholder="dd/mm/aaaa">
-                                                                    </div>
-                                                                </div>
+                                                            <div class="col-md-6">
+                                                                <label
+                                                                    class="form-label small text-muted mb-1">Meta
+                                                                    Fiscal</label>
+                                                                <input name="DATA COMPROMISSO FISCAL"
+                                                                    id="cad_data_compromisso"
+                                                                    class="form-control mask-date border-warning-subtle"
+                                                                    placeholder="dd/mm/aaaa">
                                                             </div>
                                                         </div>
                                                     </div>

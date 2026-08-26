@@ -34,161 +34,6 @@ function calcularDiasDevolucao() {
     }
 }
 
-// Variáveis globais de estado
-
-// Ensure FISCAIS_LIST exists (avoid TDZ) and Performance tweak: optionally silence verbose console logs in production
-var FISCAIS_LIST = [
-    'ÁGABE SOUSA',
-
-    'ALEXANDRE CÁSSIO',
-
-    'ALEXANDRE HORTÊNCIO',
-
-    'ANTÔNIO EDSON',
-
-    'ANTÔNIO ELDER',
-
-    'ANTÔNIO ROLIM',
-
-    'ARTHUR EDÍSIO',
-
-    'CAIO TIMBÓ',
-
-    'CARLOS RIOS',
-
-    'CLOVIS FONTENELE',
-
-    'CRISTIANA PALÁCIO',
-
-    'CRISTIANO GUILHERME',
-
-    'DAVI BRAGA',
-
-    'DAVI GADELHA',
-
-    'DAVID MACHADO',
-
-    'DIEGO ALEXANDRE OLIVEIRA PEIXOTO',
-
-    'DIEGO DEMÉTRIO',
-
-    'EDGAR PEIXOTO',
-
-    'EDILSON JR.',
-
-    'EDUARDO RICARTE FEITOSA',
-
-    'EDUARDO CIDRÃO',
-
-    'EDUARDO STÊNIO',
-
-    'EMMANUEL CRUZ',
-
-    'FÁBIO BONFIM',
-
-    'FILIPE RIBEIRO MACEDO',
-
-    'FLÁVIO COLARES',
-
-    'FLEURY NAPOLEÃO',
-
-    'FRANCISCO GOIANA',
-
-    'FRANCISCO PARENTE',
-
-    'FRANCISCO TALES',
-
-    'GECOPE DIFOR',
-
-    'GUILHERME MAIA',
-
-    'HEBERT ALAN',
-
-    'IGGO EMANUEL',
-
-    'ÍTALO HENRIQUE',
-
-    'JÉSSICA DINIZ',
-
-    'JOHN HERBERT',
-
-    'JOÃO LEONARDI',
-
-    'JOSÉ LEONÉZIO',
-
-    'JOSÉ MICHELL',
-
-    'JOSÉ MUNIZ',
-
-    'JOSÉ ROSEMBERG',
-
-    'JOSÉ WILLIAN',
-
-    'JOSUÉ JOHAB',
-
-    'JOVANKA RANGEL',
-
-    'JURANDIR VIANA',
-
-    'JUSTINIANO CAMURÇA',
-
-    'KENEDDY MAYK',
-
-    'KERLON DIÓGENES',
-
-    'LEONARDO DE ANDRADE PEREIRA',
-
-    'LUCAS ARAÚJO',
-
-    'LUCAS TEOTONIO',
-
-    'LUCIANO DENIZARDY',
-
-    'MANOEL LUCAS',
-
-    'MÁRCIO MONTENEGRO',
-
-    'MÁRIO EDSON',
-
-    'MESSIAS ROMÁRIO DE SANTIAGO LIMA',
-
-    'MAURO JOSÉ',
-
-    'NERTAN FONSECA',
-
-    'NILDENO ARAGÃO',
-
-    'ORLANDO LIMA',
-
-    'PAULO LOIOLA',
-
-    'ROBERTO BRINGEL',
-
-    'ROBERTO HOLANDA',
-
-    'ROBERTO XAVIER',
-
-    'RUI DE PAULA',
-
-    'SAULLO MARINHO',
-
-    'SILVIO CAMPOS',
-
-    'TATHIANE ANDRADE',
-
-    'TÚLIO REZENDE',
-
-    'VICENTE DE SOUSA',
-
-    'VIRNA DE PAULA',
-
-    'WEBER TEIXEIRA',
-
-    'WESLEY PEDROSA',
-
-    'WILSON MACHADO'
-];
-FISCAIS_LIST.sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
 // --- MÓDULO DE AUTOMAÇÃO GLOBAL (StatusSync) ---
 window.StatusSync = {
@@ -563,24 +408,271 @@ window.dynamicUsers = [];
 
 async function carregarListaFiscais() {
     try {
-        const { data } = await sbClient.from('app_users').select('nome, sobrenome, full_name');
+        // Mescla duas fontes vindas do banco: os usuários do sistema (app_users) e os
+        // nomes distintos das comissões de fiscalização dos contratos SOP
+        // (comissao_fiscalizacao) — para que o dropdown de Fiscal reflita quem de fato
+        // fiscaliza as obras, sem depender de nenhuma lista fixa no código.
+        const [usersRes, comissaoRes] = await Promise.all([
+            sbClient.from('app_users').select('nome, sobrenome, full_name'),
+            sbClient.from('comissao_fiscalizacao').select('nome_completo, nome_referencia')
+        ]);
+
         let dbUsers = [];
-        if (data) {
-            dbUsers = data.map(u => (u.full_name || `${u.nome || ''} ${u.sobrenome || ''}`).trim().toUpperCase()).filter(n => n);
+        if (usersRes.data) {
+            dbUsers = usersRes.data.map(u => (u.full_name || `${u.nome || ''} ${u.sobrenome || ''}`).trim().toUpperCase()).filter(n => n);
         }
 
-        // Mescla a lista estática original com os cadastros do banco para robustez máxima
-        const combined = [...new Set([...FISCAIS_LIST, ...dbUsers])];
+        let dbComissao = [];
+        if (comissaoRes.data) {
+            dbComissao = comissaoRes.data.map(m => (m.nome_completo || m.nome_referencia || '').trim().toUpperCase()).filter(n => n);
+        }
+
+        const combined = colapsarVariantesFiscais(mesclarDuplicatasPorAcento([...dbUsers, ...dbComissao]));
 
         // Ordenação alfabética robusta que lida com caracteres latinos e acentuações do português
         combined.sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
         window.dynamicUsers = combined;
-        FISCAIS_LIST = combined;
         atualizarDropdownsFiscais();
     } catch (e) {
         console.error('Erro carregarListaFiscais:', e);
     }
+}
+
+function normalizarNomeFiscal(nome) {
+    return (nome || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
+// Funde entradas que representam o mesmo fiscal mas vieram de tabelas diferentes com/sem
+// acentuação — ex.: "AGABE SOUSA LINHARES" (app_users, sem acento) e "ÁGABE SOUSA LINHARES"
+// (comissao_fiscalizacao, com acento) normalizam para a mesma chave e não podem virar duas
+// opções no dropdown. Entre as variantes de uma mesma chave, mantém a que tem acentuação
+// (grafia mais correta em português).
+function mesclarDuplicatasPorAcento(lista) {
+    const porChave = new Map();
+    lista.forEach(nome => {
+        if (!nome) return;
+        const chave = normalizarNomeFiscal(nome);
+        const atual = porChave.get(chave);
+        const nomeTemAcento = normalizarNomeFiscal(nome) !== nome;
+        const atualTemAcento = atual ? normalizarNomeFiscal(atual) !== atual : false;
+        if (!atual || (nomeTemAcento && !atualTemAcento)) porChave.set(chave, nome);
+    });
+    return [...porChave.values()];
+}
+
+// Colapsa variações do "mesmo" fiscal vindas de fontes diferentes — ex.: "DIEGO DEMÉTRIO"
+// (nome curto vindo de app_users) e "DIEGO DEMÉTRIO TORRES" (nome completo vindo de
+// comissao_fiscalizacao) apareciam como duas entradas distintas no dropdown.
+// Heurística conservadora: descarta a variante mais curta só quando todos os seus tokens
+// aparecem, na mesma ordem, dentro de uma variante mais longa já mantida E o primeiro nome
+// bate — assim nomes diferentes que só compartilham o primeiro nome não são fundidos.
+function colapsarVariantesFiscais(lista) {
+    const tokensDe = nome => normalizarNomeFiscal(nome).split(' ').filter(Boolean);
+    const ordenada = [...lista].sort((a, b) => b.length - a.length);
+    const mantidos = [];
+    ordenada.forEach(nome => {
+        const tokensAtual = tokensDe(nome);
+        const eVariacaoDeAlgumMantido = mantidos.some(mantidoNome => {
+            const tokensMantido = tokensDe(mantidoNome);
+            if (tokensAtual.length >= tokensMantido.length || tokensAtual[0] !== tokensMantido[0]) return false;
+            let i = 0;
+            tokensMantido.forEach(tok => { if (tok === tokensAtual[i]) i++; });
+            return i === tokensAtual.length;
+        });
+        if (!eVariacaoDeAlgumMantido) mantidos.push(nome);
+    });
+    return mantidos;
+}
+
+// --- INTEGRAÇÃO COM CONTRATOS SOP (SIGSOP) — busca de obra por código para autopreencher o cadastro ---
+
+// Classifica o "tipo" de um integrante da comissão de fiscalização, mesma hierarquia
+// usada no Mapa de Obras (assets/js/mapa-obras.js:classifyComissao) para decidir quem
+// aparece como "o fiscal" quando a comissão tem mais de um integrante:
+// Presidente > Fiscal > 1º/2º/3º Membro > Suplente.
+function classifyComissaoProcesso(tipoRaw) {
+    const norm = (tipoRaw || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (norm.includes('PRESIDENTE')) return { label: 'PRESIDENTE', rank: 6 };
+    if (norm.includes('FISCAL')) return { label: 'FISCAL', rank: 5 };
+    // Precisa vir antes dos testes de dígito: "1º Suplente" contém "1", então SUPLENTE
+    // tem que ser checado primeiro — senão seria classificado como titular "1º Membro".
+    if (norm.includes('SUPLENTE')) return { label: 'SUPLENTE', rank: 1 };
+    if (norm.includes('1') || norm.includes('PRIMEIRO')) return { label: '1º MEMBRO', rank: 4 };
+    if (norm.includes('2') || norm.includes('SEGUNDO')) return { label: '2º MEMBRO', rank: 3 };
+    if (norm.includes('3') || norm.includes('TERCEIRO')) return { label: '3º MEMBRO', rank: 2 };
+    if (norm.includes('MEMBRO')) return { label: 'MEMBRO', rank: 0 };
+    return { label: tipoRaw ? String(tipoRaw).toUpperCase() : 'MEMBRO', rank: -1 };
+}
+
+// Busca uma obra em contratos_edificacao pelo Código da Obra e sua comissão de
+// fiscalização em comissao_fiscalizacao, para pré-preencher o cadastro/vínculo de
+// processos. Nunca lança: quem chama trata { encontrado:false } como "não achou, segue
+// manual" — código não encontrado nunca deve bloquear o cadastro do processo.
+async function buscarObraPorCodigo(codigo) {
+    const cod = (codigo || '').trim();
+    if (!cod) return { encontrado: false };
+    try {
+        const { data: obra, error } = await sbClient
+            .from('contratos_edificacao')
+            .select('id_obra, codigo_obra, descricao_obra, contratada, contratante, distrito_operacional, municipio')
+            .eq('codigo_obra', cod)
+            .maybeSingle();
+
+        if (error || !obra) return { encontrado: false };
+
+        let comissaoCompleta = [];
+        if (obra.id_obra != null) {
+            const { data: comissao, error: errCom } = await sbClient
+                .from('comissao_fiscalizacao')
+                .select('nome_completo, nome_referencia, tipo')
+                .eq('id_obra', obra.id_obra);
+            if (!errCom && comissao) {
+                comissaoCompleta = comissao
+                    .map(m => ({ nome: (m.nome_completo || m.nome_referencia || '').trim(), ...classifyComissaoProcesso(m.tipo) }))
+                    .filter(m => m.nome)
+                    .sort((a, b) => b.rank - a.rank);
+            }
+        }
+
+        return {
+            encontrado: true,
+            descricao_obra: obra.descricao_obra || '',
+            contratante: obra.contratante || '',
+            contratada: obra.contratada || '',
+            distrito_operacional: obra.distrito_operacional || '',
+            municipio: obra.municipio || '',
+            fiscalSugerido: comissaoCompleta[0] ? comissaoCompleta[0].nome : '',
+            comissaoCompleta
+        };
+    } catch (e) {
+        console.error('[ERRO] buscarObraPorCodigo:', e);
+        return { encontrado: false };
+    }
+}
+
+// Garante que `nome` exista como <option> do select de Fiscal (adiciona se vier de uma
+// comissão e ainda não constar na lista carregada) e o seleciona.
+function garantirOpcaoFiscal(selectEl, nome) {
+    if (!selectEl || !nome) return;
+    const jaExiste = Array.from(selectEl.options).some(o => o.value === nome);
+    if (!jaExiste) {
+        const opt = document.createElement('option');
+        opt.value = nome; opt.textContent = nome;
+        selectEl.appendChild(opt);
+    }
+    selectEl.value = nome;
+}
+
+// Monta os botões da comissão completa (mostrados quando há mais de 1 integrante), para
+// o usuário poder trocar o Fiscal sugerido (1º da hierarquia) por outro nome da comissão.
+// O primeiro (rank mais alto) já nasce marcado como selecionado, pois é quem
+// garantirOpcaoFiscal já deixou selecionado no campo Fiscal Responsável.
+function montarListaComissaoHTML(comissaoCompleta, onClickFnName) {
+    return comissaoCompleta.map((m, idx) =>
+        `<button type="button" class="btn btn-sm ${idx === 0 ? 'btn-outline-primary' : 'btn-outline-secondary'}" onclick="${onClickFnName}(this, '${escapeHTML(m.nome).replace(/'/g, "\\'")}')">${escapeHTML(m.label)}: ${escapeHTML(m.nome)}</button>`
+    ).join('');
+}
+
+// --- Cadastro (NOVO PROCESSO): busca por Código da Obra ---
+async function buscarObraCadastro() {
+    const codigo = document.getElementById('cad_codigo_obra').value;
+    const statusEl = document.getElementById('cad_obra_status');
+    const wrapComissao = document.getElementById('cad_comissao_wrap');
+    const listaComissao = document.getElementById('cad_comissao_lista');
+    const btn = document.getElementById('btn-buscar-obra');
+
+    if (!codigo || !codigo.trim()) {
+        statusEl.className = 'form-text text-muted';
+        statusEl.textContent = 'Informe o Código da Obra para buscar.';
+        return;
+    }
+
+    btn.disabled = true;
+    const textoOriginal = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    const resultado = await buscarObraPorCodigo(codigo);
+
+    btn.disabled = false;
+    btn.innerHTML = textoOriginal;
+
+    if (!resultado.encontrado) {
+        statusEl.className = 'form-text text-warning';
+        statusEl.textContent = 'Código não encontrado na base de contratos — preencha os campos manualmente.';
+        wrapComissao.style.display = 'none';
+        return;
+    }
+
+    document.getElementById('cad_descricao').value = resultado.descricao_obra;
+    document.getElementById('cad_contratante').value = resultado.contratante;
+    document.getElementById('cad_contratada').value = resultado.contratada;
+    document.getElementById('cad_distrito').value = resultado.distrito_operacional;
+    document.getElementById('cad_municipio').value = resultado.municipio;
+    garantirOpcaoFiscal(document.getElementById('cad-fiscal'), resultado.fiscalSugerido);
+
+    const descCurta = (resultado.descricao_obra || '').slice(0, 80);
+    statusEl.className = 'form-text text-success';
+    statusEl.textContent = `Obra encontrada: ${descCurta}${(resultado.descricao_obra || '').length > 80 ? '…' : ''}`;
+
+    if (resultado.comissaoCompleta.length > 1) {
+        listaComissao.innerHTML = montarListaComissaoHTML(resultado.comissaoCompleta, 'selecionarFiscalCadastro');
+        wrapComissao.style.display = '';
+    } else {
+        wrapComissao.style.display = 'none';
+    }
+}
+
+function selecionarFiscalCadastro(btnEl, nome) {
+    garantirOpcaoFiscal(document.getElementById('cad-fiscal'), nome);
+    // Marcação sutil de qual integrante está selecionado: o botão clicado troca para o
+    // mesmo estilo outline-primary usado no resto do app, os demais voltam a secondary.
+    if (btnEl && btnEl.parentElement) {
+        btnEl.parentElement.querySelectorAll('button').forEach(b => {
+            b.classList.remove('btn-outline-primary');
+            b.classList.add('btn-outline-secondary');
+        });
+        btnEl.classList.remove('btn-outline-secondary');
+        btnEl.classList.add('btn-outline-primary');
+    }
+}
+
+// --- Gerenciar Processo: vincular/atualizar obra de um processo já cadastrado (admin) ---
+async function buscarObraDetalhes() {
+    const codigo = document.getElementById('det_codigo_obra').value;
+    const statusEl = document.getElementById('det_obra_status');
+
+    if (!codigo || !codigo.trim()) {
+        statusEl.className = 'form-text text-muted';
+        statusEl.textContent = 'Informe o Código da Obra para vincular.';
+        return;
+    }
+
+    const btn = document.getElementById('btn-vincular-obra');
+    btn.disabled = true;
+    const textoOriginal = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    const resultado = await buscarObraPorCodigo(codigo);
+
+    btn.disabled = false;
+    btn.innerHTML = textoOriginal;
+
+    if (!resultado.encontrado) {
+        statusEl.className = 'form-text text-warning';
+        statusEl.textContent = 'Código não encontrado na base de contratos.';
+        return;
+    }
+
+    document.getElementById('det_descricao').value = resultado.descricao_obra;
+    document.getElementById('det_contratante').value = resultado.contratante;
+    document.getElementById('det_contratada').value = resultado.contratada;
+    document.getElementById('det_distrito').value = resultado.distrito_operacional;
+    document.getElementById('det_municipio').value = resultado.municipio;
+    garantirOpcaoFiscal(document.getElementById('det_fiscal'), resultado.fiscalSugerido);
+
+    statusEl.className = 'form-text text-success';
+    statusEl.textContent = 'Obra encontrada — revise os campos e clique em "Salvar Alterações" para confirmar o vínculo.';
 }
 
 // --- LIMPAR ARQUIVOS DE COMENTÁRIOS RESOLVIDOS ---
@@ -618,7 +710,7 @@ async function limparArquivosComentariosResolvidos(table, storageBucket, comenta
 
 function atualizarDropdownsFiscais() {
     // Atualiza apenas dropdowns estáticos que precisam ser populados logo após o carregamento
-    // Modais como 'share-user-select' ou 'coment-fiscal' são populados ao abrir, usando a FISCAIS_LIST atualizada
+    // Modais como 'share-user-select' ou 'coment-fiscal' são populados ao abrir, usando window.dynamicUsers atualizada
     const ids = ['cad-fiscal', 'det_fiscal'];
 
     ids.forEach(id => {
@@ -630,14 +722,15 @@ function atualizarDropdownsFiscais() {
             sel.innerHTML = '';
             if (firstOpt) sel.appendChild(firstOpt);
 
-            FISCAIS_LIST.forEach(f => {
+            window.dynamicUsers.forEach(f => {
                 const opt = document.createElement('option');
                 opt.value = f; opt.textContent = f; sel.appendChild(opt);
             });
 
-            if (valAtual && Array.from(sel.options).some(o => o.value === valAtual)) {
-                sel.value = valAtual;
-            }
+            // Se o valor atualmente selecionado não estiver mais na lista (ex.: era uma
+            // variante de nome que colapsarVariantesFiscais descartou), preserva-o como
+            // opção extra em vez de deixar o select cair silenciosamente em branco.
+            if (valAtual) garantirOpcaoFiscal(sel, valAtual);
         }
     });
 }
@@ -658,7 +751,7 @@ function findFiscalNameInList(nomeCompleto) {
     const inputNormal = normalizar(nomeCompleto);
 
     // 1. Procura exata (depois de normalizar)
-    for (const fiscal of FISCAIS_LIST) {
+    for (const fiscal of window.dynamicUsers) {
         if (normalizar(fiscal) === inputNormal) {
             console.log('[MATCH-1 EXATO]', nomeCompleto, '->', fiscal);
             return fiscal;
@@ -667,7 +760,7 @@ function findFiscalNameInList(nomeCompleto) {
 
     // 2. Procura por partes: todos os nomes do input devem estar no fiscal
     const partes = inputNormal.split(/\s+/).filter(p => p.length > 0);
-    for (const fiscal of FISCAIS_LIST) {
+    for (const fiscal of window.dynamicUsers) {
         const fiscalNormal = normalizar(fiscal);
         if (partes.every(parte => fiscalNormal.includes(parte))) {
             console.log('[MATCH-2 PALAVRAS]', nomeCompleto, '->', fiscal);
@@ -772,6 +865,9 @@ function mapProcessoRow(r) {
         fiscal: r.fiscal || "Não informado",
         contratada: r.contratada || "Não informado",
         contratante: r.contratante || "Não informado",
+        codigoObra: r.codigo_obra || null,
+        distritoOperacional: r.distrito_operacional || null,
+        municipio: r.municipio || null,
         analista: r.analista,
         nomeAnalista: nomeAnalista,
         dataAbertura: dataAbertura,
@@ -1084,6 +1180,9 @@ async function enviarParaPlanilha() {
         contratada: formData.get("CONTRATADA"),
         fiscal: formData.get("FISCAL"),
         analista: formData.get("ANALISTA"),
+        codigo_obra: safeVal('cad_codigo_obra').trim() || null,
+        distrito_operacional: safeVal('cad_distrito').trim() || null,
+        municipio: safeVal('cad_municipio').trim() || null,
 
         data_abertura: dataParaISO(formData.get("DATA DE ABERTURA")),
         data_recebimento: dataParaISO(formData.get("DATA RECEBIMENTO")),
@@ -1230,6 +1329,10 @@ async function enviarParaPlanilha() {
             msg.style.display = 'none';
             btn.disabled = false;
             btn.innerHTML = 'SALVAR';
+            const elObraStatus = document.getElementById('cad_obra_status');
+            if (elObraStatus) elObraStatus.textContent = '';
+            const elComissaoWrap = document.getElementById('cad_comissao_wrap');
+            if (elComissaoWrap) elComissaoWrap.style.display = 'none';
             carregarDadosSupabase();
 
             if (processoIdRecemCriado) {
@@ -1333,15 +1436,21 @@ async function abrirDetalhes(processoStr) {
     };
     document.getElementById('det_contratante').value = row.contratante;
     document.getElementById('det_contratada').value = row.contratada;
+    if (document.getElementById('det_codigo_obra')) document.getElementById('det_codigo_obra').value = row.codigoObra || '';
+    if (document.getElementById('det_distrito')) document.getElementById('det_distrito').value = row.distritoOperacional || '';
+    if (document.getElementById('det_municipio')) document.getElementById('det_municipio').value = row.municipio || '';
+    if (document.getElementById('det_obra_status')) document.getElementById('det_obra_status').textContent = '';
 
     const selFiscal = document.getElementById('det_fiscal');
     if (selFiscal.options.length <= 1) {
-        FISCAIS_LIST.forEach(f => {
+        window.dynamicUsers.forEach(f => {
             const opt = document.createElement('option');
             opt.value = f; opt.textContent = f; selFiscal.appendChild(opt);
         });
     }
-    selFiscal.value = row.fiscal;
+    // "Não informado" é o fallback de exibição do mapProcessoRow para fiscal ausente, não
+    // um nome real — não deve virar opção no select (ficaria com "Selecione..." em branco).
+    if (row.fiscal && row.fiscal !== 'Não informado') garantirOpcaoFiscal(selFiscal, row.fiscal);
 
     document.getElementById('det_data_abertura').value = dateParaInput(row.dataAbertura);
     document.getElementById('det_data_compromisso').value = dateParaInput(row.dataCompromissoFiscal);
@@ -1367,6 +1476,11 @@ async function abrirDetalhes(processoStr) {
     const isAdmin = (getCurrentUserRole() === 'admin');
     const inputs = document.querySelectorAll('#formDetalhes input, #formDetalhes select, #formDetalhes textarea');
     inputs.forEach(el => { el.disabled = !isAdmin; });
+    // Botão "Vincular/Atualizar Obra" não é input/select/textarea, então precisa do
+    // próprio gate — religar um processo legado a um contrato é uma correção de dados,
+    // mesmo padrão de restrição a admin usado em excluirChecklistAditivo (contratos.js).
+    const btnVincularObra = document.getElementById('btn-vincular-obra');
+    if (btnVincularObra) btnVincularObra.disabled = !isAdmin;
 
     document.getElementById('msg-detalhes').style.display = 'none';
     document.getElementById('btn-atualizar').innerHTML = '<i class="bi bi-check-lg"></i> SALVAR ALTERAÇÕES';
@@ -1621,6 +1735,9 @@ async function executarAcaoDetalhes(actionType) {
             contratante: formData.get("CONTRATANTE"),
             contratada: formData.get("CONTRATADA"),
             analista: document.getElementById('det_analista').value,
+            codigo_obra: document.getElementById('det_codigo_obra').value.trim() || null,
+            distrito_operacional: document.getElementById('det_distrito').value.trim() || null,
+            municipio: document.getElementById('det_municipio').value.trim() || null,
 
             data_abertura: dataParaISO(formData.get("DATA DE ABERTURA")),
             data_recebimento: dataParaISO(formData.get("DATA RECEBIMENTO")),

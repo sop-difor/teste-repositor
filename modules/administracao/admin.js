@@ -399,7 +399,7 @@
         document.getElementById('vincular-usuario-nome').textContent = nomeAtual || email;
         const sel = document.getElementById('vincular-fiscal-select');
         sel.innerHTML = '<option value="">Selecione...</option>';
-        FISCAIS_LIST.forEach(f => {
+        window.dynamicUsers.forEach(f => {
             const opt = document.createElement('option'); opt.value = f; opt.textContent = f; sel.appendChild(opt);
         });
         bootstrap.Modal.getOrCreateInstance(document.getElementById('modalVincularFiscal')).show();

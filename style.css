@@ -3837,6 +3837,25 @@
             color: rgba(255, 255, 255, 0.55) !important;
         }
 
+        /* .form-text (textos de ajuda abaixo de campos) usa a cor secundária clara do
+           tema padrão do Bootstrap e não herda a regra de .text-muted acima por ser
+           outra classe — ficava ilegível sobre o fundo escuro (ex.: aviso da comissão
+           de fiscalização em Novo Processo). As variantes coloridas (sucesso/aviso/erro,
+           usadas nos status de busca de obra) são reafirmadas depois para não virem
+           cinza-apagado por causa da maior especificidade da regra base. */
+        body.theme-dark .form-text {
+            color: rgba(255, 255, 255, 0.55) !important;
+        }
+        body.theme-dark .form-text.text-success {
+            color: var(--sop-green-light, #4CC17C) !important;
+        }
+        body.theme-dark .form-text.text-warning {
+            color: #ffc94d !important;
+        }
+        body.theme-dark .form-text.text-danger {
+            color: #ff8a8a !important;
+        }
+
         body.theme-dark .text-dark,
         body.theme-dark .text-secondary {
             color: rgba(255, 255, 255, 0.85) !important;
