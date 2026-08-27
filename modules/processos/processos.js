@@ -410,6 +410,7 @@ window.dynamicUsers = [];
 // matrícula (gravada em processos.fiscal_matricula, FK -> app_users.matricula); processos.fiscal
 // (texto) continua sendo gravado a partir do rótulo, para as telas que ainda leem o nome.
 window.fiscais = [];
+let _fiscaisPromise = null;
 
 async function carregarListaFiscais() {
     try {
@@ -433,6 +434,15 @@ async function carregarListaFiscais() {
     } catch (e) {
         console.error('Erro carregarListaFiscais:', e);
     }
+}
+
+// Garante que window.fiscais esteja carregado antes de usar o dropdown de Fiscal — evita a
+// corrida em que o modal (abrirDetalhes / cadastro) abre antes de carregarListaFiscais()
+// terminar e todo fiscal cai no fallback "fora do cadastro". Reaproveita a chamada em voo.
+async function garantirFiscaisCarregados() {
+    if (window.fiscais && window.fiscais.length) return;
+    if (!_fiscaisPromise) _fiscaisPromise = carregarListaFiscais().finally(() => { _fiscaisPromise = null; });
+    await _fiscaisPromise;
 }
 
 // Resolve um fiscal por matrícula (exato) ou por nome (normalizado) contra window.fiscais.
@@ -468,8 +478,10 @@ function preencherSelectFiscais(selectEl) {
 }
 
 // Seleciona no <select> o fiscal por { matricula } (preferencial) ou por { nome } (resolvido
-// contra a lista). Se não resolver — ex.: processo antigo cujo fiscal saiu do cadastro —
-// insere uma opção marcada e desabilitada só para não zerar o campo silenciosamente.
+// contra a lista). Se não resolver, insere uma opção-sentinela p/ não zerar o campo:
+//  - lista carregada e nome não bate  -> "⚠ <nome> (fora do cadastro)" (desabilitada)
+//  - lista ainda vazia (corrida/erro) -> "<nome>" simples (habilitada), sem alarme
+// Idealmente chamado depois de `await garantirFiscaisCarregados()`.
 function selecionarFiscal(selectEl, { matricula = null, nome = null } = {}) {
     if (!selectEl) return;
     if (!selectEl.options.length || (selectEl.options.length === 1 && !selectEl.options[0].value)) {
@@ -480,11 +492,13 @@ function selecionarFiscal(selectEl, { matricula = null, nome = null } = {}) {
     if (alvo) { selectEl.value = alvo.matricula; return; }
 
     if (nome) {
+        const listaVazia = !window.fiscais || !window.fiscais.length;
+        if (listaVazia) console.warn('[Fiscal] lista de fiscais vazia ao selecionar', nome);
         const SENT = '__fiscal_fora_cadastro__';
         let opt = Array.from(selectEl.options).find(o => o.value === SENT);
         if (!opt) { opt = document.createElement('option'); opt.value = SENT; selectEl.appendChild(opt); }
-        opt.textContent = `⚠ ${nome} (fora do cadastro)`;
-        opt.disabled = true;
+        opt.textContent = listaVazia ? nome : `⚠ ${nome} (fora do cadastro)`;
+        opt.disabled = !listaVazia;
         selectEl.value = SENT;
     } else {
         selectEl.selectedIndex = 0;
@@ -631,6 +645,7 @@ function montarListaComissaoHTML(comissaoCompleta, onClickFnName) {
 
 // --- Cadastro (NOVO PROCESSO): busca por Código da Obra ---
 async function buscarObraCadastro() {
+    await garantirFiscaisCarregados();
     const codigo = document.getElementById('cad_codigo_obra').value;
     const statusEl = document.getElementById('cad_obra_status');
     const wrapComissao = document.getElementById('cad_comissao_wrap');
@@ -694,6 +709,7 @@ function selecionarFiscalCadastro(btnEl, nome) {
 
 // --- Gerenciar Processo: vincular/atualizar obra de um processo já cadastrado (admin) ---
 async function buscarObraDetalhes() {
+    await garantirFiscaisCarregados();
     const codigo = document.getElementById('det_codigo_obra').value;
     const statusEl = document.getElementById('det_obra_status');
 
@@ -1458,6 +1474,7 @@ function atualizarBadgeAba(elId, count) {
 async function abrirDetalhes(processoStr) {
     // garante que a role local esteja atualizada com o servidor
     await refreshUserRole();
+    await garantirFiscaisCarregados();
     const row = (window.allData || []).find(d => d.processo === processoStr);
     if (!row) { alert("Erro: Dados não encontrados na memória."); return; }
 
