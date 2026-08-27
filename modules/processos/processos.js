@@ -1059,7 +1059,13 @@ async function carregarDadosSupabase() {
                             autor: 'Sistema'
                         };
                     });
-                    await sbClient.from('historico_metas').insert(logs);
+                    // upsert idempotente: a constraint historico_metas_dedupe_key
+                    // (processo_id, registros, meta, dias_estipulados, autor) impede
+                    // a reinserção da mesma linha numa recarga/corrida.
+                    await sbClient.from('historico_metas').upsert(logs, {
+                        onConflict: 'processo_id,registros,meta,dias_estipulados,autor',
+                        ignoreDuplicates: true
+                    });
                 } catch (errBatch) {
                     console.error('[AutoMeta] falha ao registrar lote no historico_metas:', errBatch);
                 }
@@ -1251,13 +1257,13 @@ async function enviarParaPlanilha() {
 
                         // Inserir histórico de metas registrando o 'registro' (data da base) e dias
                         const est = baseDate.toISOString().substring(0, 10);
-                        const { error: errHist } = await sbClient.from('historico_metas').insert([{
+                        const { error: errHist } = await sbClient.from('historico_metas').upsert([{
                             processo_id: pData.id,
                             registros: est,
                             dias_estipulados: dias,
                             meta: iso,
                             autor: 'Sistema'
-                        }]);
+                        }], { onConflict: 'processo_id,registros,meta,dias_estipulados,autor', ignoreDuplicates: true });
                         if (errHist) console.error('[ERRO] Falha ao registrar log de meta inicial:', errHist.message);
                     }
                 }
@@ -1855,13 +1861,13 @@ async function executarAcaoDetalhes(actionType) {
                 const autor = sessionStorage.getItem('sop_user_name') || 'Sistema';
 
                 const estStr = (baseDate instanceof Date ? baseDate.toISOString().substring(0, 10) : (new Date(baseDate).toISOString().substring(0, 10)));
-                sbClient.from('historico_metas').insert([{
+                sbClient.from('historico_metas').upsert([{
                     processo_id: idUnico,
                     registros: estStr,
                     dias_estipulados: dias,
                     meta: dataLimiteNova,
                     autor: autor
-                }]).then(({ error: errHist }) => {
+                }], { onConflict: 'processo_id,registros,meta,dias_estipulados,autor', ignoreDuplicates: true }).then(({ error: errHist }) => {
                     if (errHist) console.error('[ERRO] Falha ao registrar log no historico_metas (Edição):', errHist.message);
                 });
             }
@@ -2094,13 +2100,13 @@ function getMetaDate(row, setD) {
                             dias = Math.round(diffTime / (1000 * 60 * 60 * 24));
                         }
 
-                        sbClient.from('historico_metas').insert([{
+                        sbClient.from('historico_metas').upsert([{
                             processo_id: row.id,
                             registros: new Date().toISOString().substring(0, 10),
                             dias_estipulados: dias,
                             meta: valSupabase,
                             autor: autor
-                        }]).then(({ error: errHist }) => {
+                        }], { onConflict: 'processo_id,registros,meta,dias_estipulados,autor', ignoreDuplicates: true }).then(({ error: errHist }) => {
                             if (errHist) console.error('[ERRO] Falha ao registrar log no historico_metas:', errHist.message);
                         });
                     } catch (e) {
