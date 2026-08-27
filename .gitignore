@@ -15,3 +15,6 @@ server/whatsapp-proxy/chaves-vm-gecope/
 *.key.pub
 supabase_key.txt
 token_sigsop.txt
+
+# MCP local (contém token do Supabase — não versionar)
+.mcp.json

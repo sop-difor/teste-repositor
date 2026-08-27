@@ -92,7 +92,9 @@ async function signUpRequest(nome, sobrenome, matricula, senha, telefone, email)
                 role: 'pending',
                 created_at: new Date().toISOString()
             };
-            if (userId) payload.id = userId; // Fallback to auth ID if allowed, usually app_users might have bigserial id though. The schema check will determine.
+            // NÃO gravar payload.id: app_users.id é bigint (identity) e userId é o UUID do
+            // Auth — o INSERT falharia com 22P02 e o perfil não seria criado. A correlação
+            // entre auth.users e app_users é feita por e-mail (normalizado em minúsculas).
 
             const { error: insertError } = await sbClient.from('app_users').insert([payload]);
             if (insertError) {
