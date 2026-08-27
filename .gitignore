@@ -18,3 +18,11 @@ token_sigsop.txt
 
 # MCP local (contém token do Supabase — não versionar)
 .mcp.json
+
+# Artefatos gerados pelo sigsop_contratos.py (--csv / --supabase)
+__pycache__/
+contratos_edificacao.csv
+comissao_fiscalizacao.csv
+ficha_contrato.csv
+aditivos_contrato.csv
+medicoes.csv
