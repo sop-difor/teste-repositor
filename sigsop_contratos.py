@@ -33,6 +33,18 @@ import argparse
 import unicodedata
 import requests
 
+# A rede da SOP faz inspecao de TLS: o certificado que termina a conexao externa
+# (ex.: supabase.co) e assinado por uma CA raiz que esta no repositorio de
+# certificados do Windows, mas nao no bundle do certifi que o requests usa por
+# padrao -> CERTIFICATE_VERIFY_FAILED. truststore faz o Python validar contra o
+# trust store do SO (mantendo a verificacao LIGADA). No-op se nao instalado
+# (`pip install truststore`) ou fora do Windows.
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ModuleNotFoundError:
+    pass
+
 # ---------------------------------------------------------------------------
 # Configuracao — SOP
 # ---------------------------------------------------------------------------
