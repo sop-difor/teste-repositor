@@ -71,11 +71,13 @@ TAB_COMISSAO = "comissao_fiscalizacao"
 TAB_FICHA = "ficha_contrato"
 TAB_ADITIVOS = "aditivos_contrato"
 TAB_MEDICOES = "medicoes"
+TAB_ADITIVO_TIPOS = "aditivo_tipos"
 CONFLICT_CONTRATOS = "codigo_obra"
 CONFLICT_COMISSAO = "id"
 CONFLICT_FICHA = "nr_contrato_sop"
 CONFLICT_ADITIVOS = "id"
 CONFLICT_MEDICOES = "id_medicao"
+CONFLICT_ADITIVO_TIPOS = "tipo"
 
 # ---------------------------------------------------------------------------
 # Mapas JSON (camelCase) -> coluna (snake_case)
@@ -357,6 +359,9 @@ def parse_aditivos(c: dict) -> list:
     for a in (c.get("aditivos") or []):
         linha = {snake: a.get(cam) for cam, snake in ADITIVO_MAPA.items()}
         linha["nr_contrato_sop"] = nr
+        # Normaliza p/ a FK aditivos_contrato.tipo_aditivo -> aditivo_tipos(tipo):
+        # '' vira NULL (FK aceita NULL); valor real e preservado como veio do SIGSOP.
+        linha["tipo_aditivo"] = (linha.get("tipo_aditivo") or "").strip() or None
         linhas.append(linha)
     return linhas
 
@@ -517,11 +522,18 @@ def main():
     elif args.supabase:
         key = _ler_credencial(SUPABASE_KEY_FILE, SUPABASE_KEY_ENV, "service_role key do Supabase")
         contratos, comissoes, fichas, aditivos, medicoes = extrair_tudo(s)
-        # ordem respeita as FKs: pais antes dos filhos
+        # Ordem respeita as FKs: pais antes dos filhos.
+        #   ficha_contrato        <- contratos_edificacao.nr_contrato_sop (FK)
+        #   contratos_edificacao  <- comissao_fiscalizacao.id_obra / medicoes.id_obra (FK)
+        #   ficha_contrato        <- aditivos_contrato.id_contrato (FK)
+        #   aditivo_tipos         <- aditivos_contrato.tipo_aditivo (FK) -> registra tipos novos antes
+        enviar_supabase(fichas, TAB_FICHA, CONFLICT_FICHA, key)
         enviar_supabase(contratos, TAB_CONTRATOS, CONFLICT_CONTRATOS, key)
         enviar_supabase(comissoes, TAB_COMISSAO, CONFLICT_COMISSAO, key)
         enviar_supabase(medicoes, TAB_MEDICOES, CONFLICT_MEDICOES, key)
-        enviar_supabase(fichas, TAB_FICHA, CONFLICT_FICHA, key)
+        tipos_aditivo = sorted({a["tipo_aditivo"] for a in aditivos if a.get("tipo_aditivo")})
+        enviar_supabase([{"tipo": t} for t in tipos_aditivo],
+                        TAB_ADITIVO_TIPOS, CONFLICT_ADITIVO_TIPOS, key)
         enviar_supabase(aditivos, TAB_ADITIVOS, CONFLICT_ADITIVOS, key)
 
     else:
