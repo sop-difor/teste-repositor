@@ -405,38 +405,103 @@ function iniciarVarreduraRiscoDiligencia() {
 // NOTE: Supabase client initialization moved to database.js (loaded before main.js)
 
 window.dynamicUsers = [];
+// Lista canônica de fiscais: [{ matricula, nome }] — nome já em CAIXA ALTA, sem espaços nas pontas.
+// Fonte única: app_users (role='fiscal'). O <option>.value do dropdown de Fiscal passa a ser a
+// matrícula (gravada em processos.fiscal_matricula, FK -> app_users.matricula); processos.fiscal
+// (texto) continua sendo gravado a partir do rótulo, para as telas que ainda leem o nome.
+window.fiscais = [];
 
 async function carregarListaFiscais() {
     try {
-        // Mescla duas fontes vindas do banco: os usuários do sistema (app_users) e os
-        // nomes distintos das comissões de fiscalização dos contratos SOP
-        // (comissao_fiscalizacao) — para que o dropdown de Fiscal reflita quem de fato
-        // fiscaliza as obras, sem depender de nenhuma lista fixa no código.
-        const [usersRes, comissaoRes] = await Promise.all([
-            sbClient.from('app_users').select('nome, sobrenome, full_name'),
-            sbClient.from('comissao_fiscalizacao').select('nome_completo, nome_referencia')
-        ]);
+        const { data, error } = await sbClient
+            .from('app_users')
+            .select('matricula, nome, sobrenome, full_name')
+            .eq('role', 'fiscal');
+        if (error) throw error;
 
-        let dbUsers = [];
-        if (usersRes.data) {
-            dbUsers = usersRes.data.map(u => (u.full_name || `${u.nome || ''} ${u.sobrenome || ''}`).trim().toUpperCase()).filter(n => n);
-        }
+        window.fiscais = (data || [])
+            .map(u => ({
+                matricula: (u.matricula || '').trim(),
+                nome: (u.full_name || `${u.nome || ''} ${u.sobrenome || ''}`).trim().toUpperCase()
+            }))
+            .filter(f => f.matricula && f.nome)
+            .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
-        let dbComissao = [];
-        if (comissaoRes.data) {
-            dbComissao = comissaoRes.data.map(m => (m.nome_completo || m.nome_referencia || '').trim().toUpperCase()).filter(n => n);
-        }
-
-        const combined = colapsarVariantesFiscais(mesclarDuplicatasPorAcento([...dbUsers, ...dbComissao]));
-
-        // Ordenação alfabética robusta que lida com caracteres latinos e acentuações do português
-        combined.sort((a, b) => a.localeCompare(b, 'pt-BR'));
-
-        window.dynamicUsers = combined;
+        // Compat: admin.js e findFiscalNameInList ainda consomem window.dynamicUsers (só nomes).
+        window.dynamicUsers = window.fiscais.map(f => f.nome);
         atualizarDropdownsFiscais();
     } catch (e) {
         console.error('Erro carregarListaFiscais:', e);
     }
+}
+
+// Resolve um fiscal por matrícula (exato) ou por nome (normalizado) contra window.fiscais.
+function fiscalPorMatricula(mat) {
+    if (!mat) return null;
+    return window.fiscais.find(f => f.matricula === String(mat).trim()) || null;
+}
+function fiscalPorNome(nome) {
+    if (!nome) return null;
+    const alvo = normalizarNomeFiscal(nome);
+    if (!alvo) return null;
+    return window.fiscais.find(f => normalizarNomeFiscal(f.nome) === alvo)
+        || window.fiscais.find(f => {
+            const fn = normalizarNomeFiscal(f.nome);
+            return fn.startsWith(alvo + ' ') || alvo.startsWith(fn + ' ');
+        })
+        || null;
+}
+
+// Popula um <select> de Fiscal com as opções (value=matrícula, texto=nome), mantendo a 1ª
+// opção ("Selecione...") se existir.
+function preencherSelectFiscais(selectEl) {
+    if (!selectEl) return;
+    const firstOpt = selectEl.options[0] && !selectEl.options[0].value ? selectEl.options[0] : null;
+    selectEl.innerHTML = '';
+    if (firstOpt) selectEl.appendChild(firstOpt);
+    window.fiscais.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.matricula;
+        opt.textContent = f.nome;
+        selectEl.appendChild(opt);
+    });
+}
+
+// Seleciona no <select> o fiscal por { matricula } (preferencial) ou por { nome } (resolvido
+// contra a lista). Se não resolver — ex.: processo antigo cujo fiscal saiu do cadastro —
+// insere uma opção marcada e desabilitada só para não zerar o campo silenciosamente.
+function selecionarFiscal(selectEl, { matricula = null, nome = null } = {}) {
+    if (!selectEl) return;
+    if (!selectEl.options.length || (selectEl.options.length === 1 && !selectEl.options[0].value)) {
+        preencherSelectFiscais(selectEl);
+    }
+    let alvo = matricula ? fiscalPorMatricula(matricula) : null;
+    if (!alvo && nome) alvo = fiscalPorNome(nome);
+    if (alvo) { selectEl.value = alvo.matricula; return; }
+
+    if (nome) {
+        const SENT = '__fiscal_fora_cadastro__';
+        let opt = Array.from(selectEl.options).find(o => o.value === SENT);
+        if (!opt) { opt = document.createElement('option'); opt.value = SENT; selectEl.appendChild(opt); }
+        opt.textContent = `⚠ ${nome} (fora do cadastro)`;
+        opt.disabled = true;
+        selectEl.value = SENT;
+    } else {
+        selectEl.selectedIndex = 0;
+    }
+}
+
+// Lê o par { matricula, nome } selecionado num <select> de Fiscal. matricula = null quando
+// nada válido está selecionado (inclui a opção-sentinela de fiscal fora do cadastro).
+function lerFiscalSelecionado(selectEl) {
+    if (!selectEl) return { matricula: null, nome: null };
+    const opt = selectEl.selectedOptions && selectEl.selectedOptions[0];
+    const val = selectEl.value;
+    const valido = val && val !== '__fiscal_fora_cadastro__';
+    return {
+        matricula: valido ? val : null,
+        nome: opt ? opt.textContent.replace(/^⚠\s*/, '').replace(/\s*\(fora do cadastro\)$/, '').trim() : null
+    };
 }
 
 function normalizarNomeFiscal(nome) {
@@ -551,18 +616,8 @@ async function buscarObraPorCodigo(codigo) {
     }
 }
 
-// Garante que `nome` exista como <option> do select de Fiscal (adiciona se vier de uma
-// comissão e ainda não constar na lista carregada) e o seleciona.
-function garantirOpcaoFiscal(selectEl, nome) {
-    if (!selectEl || !nome) return;
-    const jaExiste = Array.from(selectEl.options).some(o => o.value === nome);
-    if (!jaExiste) {
-        const opt = document.createElement('option');
-        opt.value = nome; opt.textContent = nome;
-        selectEl.appendChild(opt);
-    }
-    selectEl.value = nome;
-}
+// (Removido garantirOpcaoFiscal — o dropdown de Fiscal agora é chaveado por matrícula;
+//  usar selecionarFiscal({ matricula } | { nome }).)
 
 // Monta os botões da comissão completa (mostrados quando há mais de 1 integrante), para
 // o usuário poder trocar o Fiscal sugerido (1º da hierarquia) por outro nome da comissão.
@@ -609,7 +664,7 @@ async function buscarObraCadastro() {
     document.getElementById('cad_contratada').value = resultado.contratada;
     document.getElementById('cad_distrito').value = resultado.distrito_operacional;
     document.getElementById('cad_municipio').value = resultado.municipio;
-    garantirOpcaoFiscal(document.getElementById('cad-fiscal'), resultado.fiscalSugerido);
+    selecionarFiscal(document.getElementById('cad-fiscal'), { nome: resultado.fiscalSugerido });
 
     const descCurta = (resultado.descricao_obra || '').slice(0, 80);
     statusEl.className = 'form-text text-success';
@@ -624,7 +679,7 @@ async function buscarObraCadastro() {
 }
 
 function selecionarFiscalCadastro(btnEl, nome) {
-    garantirOpcaoFiscal(document.getElementById('cad-fiscal'), nome);
+    selecionarFiscal(document.getElementById('cad-fiscal'), { nome });
     // Marcação sutil de qual integrante está selecionado: o botão clicado troca para o
     // mesmo estilo outline-primary usado no resto do app, os demais voltam a secondary.
     if (btnEl && btnEl.parentElement) {
@@ -669,7 +724,7 @@ async function buscarObraDetalhes() {
     document.getElementById('det_contratada').value = resultado.contratada;
     document.getElementById('det_distrito').value = resultado.distrito_operacional;
     document.getElementById('det_municipio').value = resultado.municipio;
-    garantirOpcaoFiscal(document.getElementById('det_fiscal'), resultado.fiscalSugerido);
+    selecionarFiscal(document.getElementById('det_fiscal'), { nome: resultado.fiscalSugerido });
 
     statusEl.className = 'form-text text-success';
     statusEl.textContent = 'Obra encontrada — revise os campos e clique em "Salvar Alterações" para confirmar o vínculo.';
@@ -709,29 +764,14 @@ async function limparArquivosComentariosResolvidos(table, storageBucket, comenta
 // --- LISTENERS GLOBAIS REMOVIDOS (CONSOLIDADO NO DOMCONTENTLOADED) ---
 
 function atualizarDropdownsFiscais() {
-    // Atualiza apenas dropdowns estáticos que precisam ser populados logo após o carregamento
-    // Modais como 'share-user-select' ou 'coment-fiscal' são populados ao abrir, usando window.dynamicUsers atualizada
-    const ids = ['cad-fiscal', 'det_fiscal'];
-
-    ids.forEach(id => {
+    // Popula os dropdowns estáticos de Fiscal (value=matrícula, texto=nome) a partir de window.fiscais.
+    // Preserva a seleção atual quando ela ainda existe na lista.
+    ['cad-fiscal', 'det_fiscal'].forEach(id => {
         const sel = document.getElementById(id);
-        if (sel) {
-            const valAtual = sel.value;
-            // Limpa mantendo a primeira opção (Selecione...)
-            const firstOpt = sel.options[0];
-            sel.innerHTML = '';
-            if (firstOpt) sel.appendChild(firstOpt);
-
-            window.dynamicUsers.forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f; opt.textContent = f; sel.appendChild(opt);
-            });
-
-            // Se o valor atualmente selecionado não estiver mais na lista (ex.: era uma
-            // variante de nome que colapsarVariantesFiscais descartou), preserva-o como
-            // opção extra em vez de deixar o select cair silenciosamente em branco.
-            if (valAtual) garantirOpcaoFiscal(sel, valAtual);
-        }
+        if (!sel) return;
+        const valAtual = sel.value;
+        preencherSelectFiscais(sel);
+        if (valAtual && Array.from(sel.options).some(o => o.value === valAtual)) sel.value = valAtual;
     });
 }
 
@@ -863,6 +903,7 @@ function mapProcessoRow(r) {
         tipo: r.tipo || "Não informado",
         descricao: r.descricao || "",
         fiscal: r.fiscal || "Não informado",
+        fiscalMatricula: r.fiscal_matricula || null,
         contratada: r.contratada || "Não informado",
         contratante: r.contratante || "Não informado",
         codigoObra: r.codigo_obra || null,
@@ -1177,6 +1218,9 @@ async function enviarParaPlanilha() {
 
     const safeVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
 
+    // O <select> de Fiscal agora carrega a matrícula no value; o nome vem do rótulo da opção.
+    const fiscalCad = lerFiscalSelecionado(document.getElementById('cad-fiscal'));
+
     const payload = {
         processo: numProcesso,
         tipo: formData.get("TIPO"),
@@ -1184,7 +1228,8 @@ async function enviarParaPlanilha() {
         descricao: formData.get("DESCRIÇÃO"),
         contratante: formData.get("CONTRATANTE"),
         contratada: formData.get("CONTRATADA"),
-        fiscal: formData.get("FISCAL"),
+        fiscal: fiscalCad.nome,
+        fiscal_matricula: fiscalCad.matricula,
         analista: formData.get("ANALISTA"),
         codigo_obra: safeVal('cad_codigo_obra').trim() || null,
         distrito_operacional: safeVal('cad_distrito').trim() || null,
@@ -1273,7 +1318,7 @@ async function enviarParaPlanilha() {
         })();
 
         // Log de Atividade
-        registrarAtividade('PROCESSO', `cadastrou o processo Nº ${numProcesso}`, numProcesso, formData.get("DESCRIÇÃO"), formData.get("FISCAL"));
+        registrarAtividade('PROCESSO', `cadastrou o processo Nº ${numProcesso}`, numProcesso, formData.get("DESCRIÇÃO"), fiscalCad.nome);
 
         // Notificação WhatsApp (Apenas se entrar em Análise Fiscal)
         const statusInicial = formData.get("STATUS");
@@ -1293,7 +1338,7 @@ async function enviarParaPlanilha() {
         if (statusInicial === 'ANÁLISE FISCAL') {
             const metaFormatada = payload.data_compromisso_fiscal ? payload.data_compromisso_fiscal.split('-').reverse().join('/') : 'Não definida';
             processarNotificacao('novo_processo', {
-                NOME_FISCAL: formData.get("FISCAL") || 'Fiscal',
+                NOME_FISCAL: fiscalCad.nome || 'Fiscal',
                 NUP_PROCESSO: numProcesso,
                 NOME_OBRA: formData.get("DESCRIÇÃO") || 'Obra não informada',
                 DATA_META: metaFormatada
@@ -1447,16 +1492,12 @@ async function abrirDetalhes(processoStr) {
     if (document.getElementById('det_municipio')) document.getElementById('det_municipio').value = row.municipio || '';
     if (document.getElementById('det_obra_status')) document.getElementById('det_obra_status').textContent = '';
 
-    const selFiscal = document.getElementById('det_fiscal');
-    if (selFiscal.options.length <= 1) {
-        window.dynamicUsers.forEach(f => {
-            const opt = document.createElement('option');
-            opt.value = f; opt.textContent = f; selFiscal.appendChild(opt);
-        });
-    }
-    // "Não informado" é o fallback de exibição do mapProcessoRow para fiscal ausente, não
-    // um nome real — não deve virar opção no select (ficaria com "Selecione..." em branco).
-    if (row.fiscal && row.fiscal !== 'Não informado') garantirOpcaoFiscal(selFiscal, row.fiscal);
+    // Seleciona pelo vínculo estável (fiscal_matricula); cai no nome só para processos
+    // antigos ainda sem matrícula. "Não informado" é fallback de exibição, não é nome real.
+    selecionarFiscal(document.getElementById('det_fiscal'), {
+        matricula: row.fiscalMatricula,
+        nome: (row.fiscal && row.fiscal !== 'Não informado') ? row.fiscal : null
+    });
 
     document.getElementById('det_data_abertura').value = dateParaInput(row.dataAbertura);
     document.getElementById('det_data_compromisso').value = dateParaInput(row.dataCompromissoFiscal);
@@ -1733,11 +1774,14 @@ async function executarAcaoDetalhes(actionType) {
 
         const formData = new FormData(form);
 
+        const fiscalDet = lerFiscalSelecionado(document.getElementById('det_fiscal'));
+
         const updates = {
             tipo: formData.get("TIPO"),
             status: formData.get("STATUS"),
             descricao: formData.get("DESCRIÇÃO"),
-            fiscal: document.getElementById('det_fiscal').value,
+            fiscal: fiscalDet.nome,
+            fiscal_matricula: fiscalDet.matricula,
             contratante: formData.get("CONTRATANTE"),
             contratada: formData.get("CONTRATADA"),
             analista: document.getElementById('det_analista').value,
