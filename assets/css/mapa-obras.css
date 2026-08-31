@@ -9,11 +9,33 @@
      ver STATUS_STATES em mapa-obras.js — para não confundir os dois canais de cor) */
   --map-base:#3E9E70; --map-open-fill:#63C494; --map-open-border:#BDEED4;
   --map-group-border:#CDEFDD; --map-state-fill:#1E7A54; --map-state-hover:#249066;
+  /* Etapa A / Bloco 4 — cor das linhas de hover/seleção do mapa (lida por
+     TOKENS.mapLine no JS) e a fórmula da coroplética (opacidade = floor + span·t,
+     lida por TOKENS.choroFloor/choroSpan). No escuro resolvem para os valores de
+     sempre (--text-brightest / 0,10 / 0,62); o claro redefine só estes. */
+  --map-line:var(--text-brightest); --choro-floor:.10; --choro-span:.62;
+  /* Etapa C — "sem correspondência": distrito/município que, com o filtro ativo, não
+     tem nenhum contrato. Cinza dedicado, fora da paleta coroplética (verde) e da cor
+     de base, para distinguir "0 resultados" de "poucos resultados". */
+  --nomatch-fill:#5C6B64; --nomatch-border:#7E8C85; --nomatch-label:#7E8C85;
 
   --bg-base:#071310; --bg-header-1:#07130E; --bg-header-2:#0C2A1E; --bg-header-3:#0A2118;
+  /* Etapa A / Bloco 3 (Rodada 3.1) — "campo" do mapa, distinto do piso da página.
+     No escuro é o mesmo tom de sempre; no claro fica um passo mais fundo/verde
+     que a página, de forma discreta — sem competir com o Ceará, sem virar escuro. */
+  --map-field:var(--bg-base);
   --bg-panel:#0B1A14; --bg-panel-2:#081410; --bg-modal:#0C1F17; --bg-modal-2:#081310; --bg-hover:#12271D;
   --panel-rgb:8,18,14; --white-rgb:255,255,255; --ink-rgb:0,0,0; --bg-base-rgb:7,19,16;
   --text-on-light:#0B0B0B; --shadow-ink:#05100C;
+
+  /* Etapa A / Bloco 2 — atalhos semânticos de sobreposição, para o tema poder virá-los:
+     --raise-rgb  = véu que "eleva"/destaca uma superfície contra o fundo (fundos sutis,
+                    bordas tênues, divisórias, trilho de rolagem). Branco no tema escuro.
+     --shadow-rgb = cor da sombra projetada (box-shadow / drop-shadow).
+     No tema escuro resolvem para os mesmos valores de hoje (--white-rgb / --ink-rgb),
+     então NADA muda visualmente neste bloco. O tema claro (Bloco 3) redefine só estes
+     dois, sob :root:not(.theme-dark). */
+  --raise-rgb:var(--white-rgb); --shadow-rgb:var(--ink-rgb);
 
   /* redesign "dashboard corporativo": superfície sólida pros cartões do painel
      (KPI/contrato/ranking) — um degrau mais clara que o fundo do aside, pra dar
@@ -27,25 +49,279 @@
   --text-formal:#4B7565; --text-body2:#AEC7BC; --text-input:#DDEDE5; --text-data:#E4F2EB;
   --text-obj:#C7DDD1; --text-chip:#BFD8CC; --text-state-label:#BFF3DC; --badge-text:#9FE9C9;
 
-  scrollbar-width:thin;scrollbar-color:rgba(var(--white-rgb),.22) transparent
+  scrollbar-width:thin;scrollbar-color:rgba(var(--raise-rgb),.22) transparent
 }
+
+  /* ==========================================================================
+     Etapa A / Bloco 3 — TEMA CLARO (Rodada 3.1 — refinamento).
+     Direção: a v1 clara, porém mais leve, limpa e sofisticada. Fundo quase branco,
+     mapa como protagonista SEM ficar escuro, profundidade por sombra sutil e
+     espaçamento (não por caixas), rótulos do mapa como camada secundária,
+     paleta verde institucional dessaturada. Só redefine tokens + poucas regras
+     escopadas em :root:not(.theme-dark); o :root escuro fica intacto.
+     Estados de hover/seleção do mapa que ainda usam --text-brightest como linha
+     ficam para o Bloco 4 (ajuste-fino do mapa).
+     ========================================================================== */
+  :root:not(.theme-dark){
+    /* acento verde institucional — moderado, não neon. Variantes "de texto"
+       (--ng-light/--ng-mid) mais escuras para legibilidade (AA). */
+    --ng:#0C8A5C; --ng-light:#0A6E49; --ng-mid:#0A6E49; --ng-deep:#0A5C40; --ng-rgb:12,138,92;
+
+    --amber:#C0791A; --amber-text:#87540F; --amber-text-2:#87540F; --amber-deep:#8A3D12; --amber-rgb:192,121,26;
+
+    --status-exec:#2F7DB8; --status-ok:#12805A; --status-wait:#B0730C;
+    --status-stop:#C5372F; --status-stop-deep:#8A241C; --status-stop-text:#A62B22; --status-stop-rgb:197,55,47;
+
+    /* fundos — quase branco; a hierarquia vem de sombra + espaço, não de degraus de cinza */
+    --bg-base:#F4F6F5; --bg-base-rgb:244,246,245;
+    --bg-header-1:#FFFFFF; --bg-header-2:#F1F5F3; --bg-header-3:#EAF1EE;
+    --bg-panel:#FCFDFD; --bg-panel-2:#F7FAF9;
+    /* Etapa 10 — modal deixa de ser branco puro: um verde-acinzentado suave (mesma
+       família de --bg-header-2/3) para os cards brancos ganharem superfície própria. */
+    --bg-modal:#F1F5F3; --bg-modal-2:#E9F0EC;
+    --bg-hover:#EEF3F0;
+    --panel-rgb:255,255,255;
+    --map-field:#E8EDEA;   /* campo do mapa: um passo mais fundo/verde que a página, discreto */
+
+    --raise-rgb:22,40,33; --shadow-rgb:120,132,128;
+
+    /* cards brancos (leve gradiente), borda um degrau mais firme que a v1 (.10 -> .14)
+       para separarem do fundo do modal sem virar "caixa dentro de caixa". */
+    --card-bg:#FFFFFF; --card-bg-2:#FBFDFC; --card-border:rgba(22,40,33,.14);
+
+    /* mapa — verde institucional (não neon, mas com corpo — sem virar "verde+cinza").
+       Estados com passos perceptíveis: normal -> hover -> aberto vão ficando mais cheios.
+       Bloco 4: --map-line (linhas de hover/seleção) branco-esverdeado; a coroplética
+       ganha um piso mais alto no claro (--choro-floor) para áreas com poucos
+       contratos não sumirem, mantendo a diferença entre os níveis (--choro-span). */
+    --map-state-fill:#33855B; --map-state-hover:#2C7C4E;
+    --map-base:#3C8C64; --map-open-fill:#2C7E50;
+    --map-group-border:#EAF3EE;   /* divisões entre distritos: branco suavizado */
+    --map-open-border:#E4EEE9;
+    --map-line:#F4FAF7;
+    --choro-floor:.20; --choro-span:.52;
+    --nomatch-fill:#B3BEB8; --nomatch-border:#93A099; --nomatch-label:#6C7A73;
+
+    /* rótulos do mapa: halo vira um "sussurro" claro (imperceptível como contorno) */
+    --shadow-ink:#F4FAF7;
+
+    /* textos — escala escura; rótulos e "dim" um degrau mais escuros que a v1 */
+    --text-base:#26382F; --text-bright:#16261F; --text-brightest:#0C1912; --text-value:#20342B;
+    --text-muted:#3F5A4E; --text-label:#42604F; --text-dim:#48604F; --text-dimmer:#4F6558;
+    --text-formal:#4F6558; --text-body2:#32453C; --text-input:#1E322A; --text-data:#1B2E26;
+    --text-obj:#2B3E36; --text-chip:#32453C; --text-state-label:#2C4139; --badge-text:#0A6E49;
+  }
+
+  /* ---- Rodada 3.1: regras escopadas no tema claro (não afetam o escuro) ---- */
+
+  /* cartões: menos caixa, mais elevação. Borda quase invisível nos cartões simples;
+     .wide/.alert mantêm a borda tingida (é acento com significado, não "encaixotamento"). */
+  :root:not(.theme-dark) .kpi,
+  :root:not(.theme-dark) .rrow,
+  :root:not(.theme-dark) .obra{box-shadow:0 1px 2px rgba(20,40,33,.045),0 5px 14px rgba(20,40,33,.03)}
+  :root:not(.theme-dark) .rrow,
+  :root:not(.theme-dark) .obra{border-color:transparent}
+
+  /* separação painel direito <-> mapa: linha muito clara + sombra levíssima */
+  :root:not(.theme-dark) aside{border-left-color:rgba(20,45,35,.10)}
+  :root:not(.theme-dark) main:not(.aside-collapsed) aside{box-shadow:-10px 0 28px rgba(20,40,33,.05)}
+
+  /* painel de filtros: sombra suavizada */
+  :root:not(.theme-dark) .ctrl{box-shadow:0 8px 22px rgba(20,40,33,.10)}
+
+  /* gráficos respirando + hierarquia (KPI > título > gráfico > legenda) */
+  :root:not(.theme-dark) .statwrap{margin-top:18px}
+  :root:not(.theme-dark) .stackbar{height:13px}
+  :root:not(.theme-dark) .statleg{gap:10px 14px}
+
+  /* cabeçalho: bordas mais delicadas; "Carteira ativa" sem a ênfase âmbar */
+  :root:not(.theme-dark) .btn-voltar,
+  :root:not(.theme-dark) .btn-present{border-color:rgba(var(--raise-rgb),.10)}
+  :root:not(.theme-dark) .btn-scope{border-color:rgba(var(--raise-rgb),.10)}
+  :root:not(.theme-dark) .btn-scope:hover{border-color:rgba(var(--raise-rgb),.20);background:rgba(var(--raise-rgb),.04)}
+
+  /* rótulos do mapa — camada secundária: peso leve, cor grafite-esverdeada bem
+     escura, halo claro discreto (sem o brilho verde). Sem redução de opacidade:
+     ela comprimia o contraste sobre o preenchimento verde. Cores conferidas
+     ≥ WCAG AA em toda a faixa do coroplético e ≥ 3:1 nos estados hover/seleção
+     (revisor Design/UX — Etapa A). O maior destaque de nome/seleção fica
+     reservado para uma etapa posterior (JS). */
+  :root:not(.theme-dark) .grp-label .lbl-name{font-weight:500;color:#1C2B23;
+        text-shadow:0 0 3px var(--shadow-ink),0 0 3px var(--shadow-ink)}
+  :root:not(.theme-dark) .grp-label .lbl-count{font-weight:700;font-size:calc(var(--grpfs,10px)*.87);color:#123024;
+        text-shadow:0 0 3px var(--shadow-ink),0 0 3px var(--shadow-ink)}
+  :root:not(.theme-dark) .mun-label .lbl-name{font-weight:500;color:#1C2B23;
+        text-shadow:0 0 2px var(--shadow-ink),0 0 2px var(--shadow-ink)}
+  :root:not(.theme-dark) .mun-label .lbl-count{font-weight:700;font-size:calc(var(--munfs,9px)*.87);color:#123024;
+        text-shadow:0 0 2px var(--shadow-ink),0 0 2px var(--shadow-ink)}
+
+  /* botão "Limpar busca e filtros": ação secundária clara — não é campo, não some.
+     Ícone de redefinir (↺), não um "x" (que leria como fechar). */
+  :root:not(.theme-dark) .clearf{width:auto;display:inline-flex;align-items:center;gap:7px;
+        background:transparent;border:1px solid rgba(var(--raise-rgb),.18);color:var(--text-muted);
+        font-weight:600;font-size:11px;padding:6px 12px 6px 10px;border-radius:8px;margin-top:10px;transition:.15s}
+  :root:not(.theme-dark) .clearf::before{content:"\21BA";font-size:13px;line-height:1;opacity:.75}
+  :root:not(.theme-dark) .clearf:hover{border-color:rgba(var(--ng-rgb),.45);color:var(--ng-mid);background:rgba(var(--ng-rgb),.06)}
+
+  /* ---- Rodada 3.2 / Parte A: painel de filtros mais limpo (só no tema claro) ----
+     Menos "caixa dentro de caixa": títulos discretos, campos brancos com hairline,
+     segmentados sem a calha cinza, mais ar entre os grupos. */
+  :root:not(.theme-dark) .ctrl-head span{color:var(--text-dim)}
+  :root:not(.theme-dark) .ctrl .lbl{font-size:9.5px;letter-spacing:.5px;color:var(--text-dim);margin:2px 0 6px}
+  :root:not(.theme-dark) .ctrl .fsel,
+  :root:not(.theme-dark) .ctrl .msel-btn{background:#FFFFFF;border-color:rgba(var(--raise-rgb),.14)}
+  :root:not(.theme-dark) .ctrl .seg{background:transparent;padding:0;gap:8px;margin-bottom:16px}
+  :root:not(.theme-dark) .ctrl .seg button{border:1px solid rgba(var(--raise-rgb),.14);background:#FFFFFF}
+  :root:not(.theme-dark) .ctrl .seg button.on{background:rgba(var(--ng-rgb),.12);border-color:rgba(var(--ng-rgb),.4);color:var(--text-brightest);box-shadow:none}
+  :root:not(.theme-dark) .ctrl .msel{margin-bottom:10px}
+  :root:not(.theme-dark) .ctrl .fsel+.lbl{margin-top:8px}
+
+  /* ---- Rodada 3.2 / Parte B: 3 níveis de hierarquia de KPI — IGUAL nos dois temas.
+     A disposição dos cards é a mesma no claro e no escuro; só as cores mudam por
+     tema (vêm dos tokens). Dirigido pelas classes k-* do HTML — as antigas classes
+     `wide` e `alert` foram removidas dos KPIs; toda a hierarquia é feita aqui.
+     Layout:  [Obras]  /  [Valor total]  /  [Paralisadas | Valor médio]  /
+              [Municípios | Total em aditivos]                                        */
+  /* Nível 1 — Obras + Valor total: faixa cheia, valor maior, com o acento verde
+     lateral e maior sensação de profundidade (ver "refinamento de profundidade"). */
+  .kpi.k-obras,
+  .kpi.k-valor{grid-column:1/-1;padding:18px 16px 18px 19px}
+  .kpi.k-obras::before,
+  .kpi.k-valor::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+        background:linear-gradient(var(--ng),var(--ng-deep))}
+  .kpi.k-obras .v,
+  .kpi.k-valor .v{font-size:24px;text-shadow:0 0 16px rgba(var(--ng-rgb),.22)}
+  body.presentation .kpi.k-obras .v,
+  body.presentation .kpi.k-valor .v{font-size:27px}
+  .kpi.k-obras{order:1}
+  .kpi.k-valor{order:2}
+
+  /* Nível 2 — Paralisadas / Valor médio / Municípios / Aditivos: compactos, 2×2.
+     Paralisadas: só o número em vermelho. */
+  .kpi.k-par{order:3}
+  .kpi.k-medio{order:4}
+  .kpi.k-mun{order:5}
+  .kpi.k-adit{order:6}
+  .kpi.k-par .v{color:var(--status-stop-text)}
+
+  /* ---- AJUSTE VISUAL / painel direito (área superior) ------------------------
+     Ícone à direita de cada KPI, dentro de um círculo (verde claro; vermelho em
+     Paralisadas). Hover sutil (elevação + sombra levemente maior). Só cor por
+     token, então acompanha os dois temas. */
+  /* ícone: item da grade (coluna própria), centralizado na vertical ao lado do
+     bloco rótulo+valor. Tamanho confortável; nos cards compactos um pouco menor. */
+  .kpi .ic{grid-area:ic;align-self:center;
+        width:36px;height:36px;border-radius:50%;
+        display:grid;place-items:center;color:var(--ng);background:rgba(var(--ng-rgb),.13);
+        border:1px solid rgba(var(--ng-rgb),.18)}
+  .kpi .ic svg{width:17px;height:17px;display:block}
+  .kpi.k-par .ic{color:var(--status-stop);background:rgba(var(--status-stop-rgb),.14);border-color:rgba(var(--status-stop-rgb),.20)}
+  .kpi.k-par .ic,.kpi.k-medio .ic,.kpi.k-mun .ic,.kpi.k-adit .ic{width:32px;height:32px}
+  .kpi.k-par .ic svg,.kpi.k-medio .ic svg,.kpi.k-mun .ic svg,.kpi.k-adit .ic svg{width:15px;height:15px}
+  /* nos cards compactos o valor é um pouco menor (reforça a hierarquia e dá folga
+     para a coluna do ícone) — o NÚMERO em si não muda, só o tamanho da fonte. */
+  .kpi.k-par .v,.kpi.k-medio .v,.kpi.k-mun .v,.kpi.k-adit .v{font-size:17px}
+  /* círculo do ícone: pequeno elemento elevado — leve sombra própria, por tema */
+  :root:not(.theme-dark) .kpi .ic{box-shadow:0 1px 2px rgba(20,40,33,.10),0 2px 5px rgba(20,40,33,.06)}
+  :root.theme-dark .kpi .ic{box-shadow:0 1px 3px rgba(0,0,0,.32)}
+  .kpi:hover{transform:translateY(-2px)}
+
+  /* ---- refinamento de profundidade (cards do painel direito) — por tema, sem
+     mexer em estrutura/paleta. Fundo do painel < cards elevados < ícones em
+     círculos elevados. Profundidade por sombra suave + borda superior mais clara
+     + leve elevação; nada de 3D exagerado. --------------------------------------- */
+  /* TEMA CLARO: sombra em camadas, mais marcada embaixo; topo do card mais claro */
+  :root:not(.theme-dark) .kpi{border-color:rgba(20,40,33,.12);border-top-color:rgba(20,40,33,.05);
+        box-shadow:0 1px 2px rgba(20,40,33,.05),0 4px 10px rgba(20,40,33,.045),0 10px 22px rgba(20,40,33,.03)}
+  :root:not(.theme-dark) .kpi.k-obras,
+  :root:not(.theme-dark) .kpi.k-valor{border-color:rgba(var(--ng-rgb),.22);border-top-color:rgba(var(--ng-rgb),.14);
+        box-shadow:0 2px 4px rgba(20,40,33,.06),0 8px 20px rgba(20,40,33,.06),0 16px 34px rgba(20,40,33,.04)}
+  :root:not(.theme-dark) .kpi:hover{box-shadow:0 2px 5px rgba(20,40,33,.07),0 8px 18px rgba(20,40,33,.06),0 16px 32px rgba(20,40,33,.05)}
+  :root:not(.theme-dark) .kpi.k-obras:hover,
+  :root:not(.theme-dark) .kpi.k-valor:hover{box-shadow:0 3px 6px rgba(20,40,33,.08),0 12px 26px rgba(20,40,33,.07),0 22px 44px rgba(20,40,33,.05)}
+  /* TEMA ESCURO: gradiente/borda já dão a base; some uma sombra bem suave + topo
+     do card com um fio de luz (borda superior mais clara). Paleta intocada. */
+  :root.theme-dark .kpi{border-top-color:rgba(255,255,255,.16);
+        box-shadow:0 1px 2px rgba(0,0,0,.22),0 6px 16px rgba(0,0,0,.16)}
+  :root.theme-dark .kpi.k-obras,
+  :root.theme-dark .kpi.k-valor{border-top-color:rgba(255,255,255,.2);
+        box-shadow:0 2px 4px rgba(0,0,0,.28),0 10px 24px rgba(0,0,0,.2)}
+  :root.theme-dark .kpi:hover{border-color:rgba(var(--ng-rgb),.22);box-shadow:0 2px 5px rgba(0,0,0,.28),0 10px 24px rgba(0,0,0,.22)}
+
+  /* ---- Hover dos cards do painel: estado de "seleção" nítido (pedido — os cards
+     pareciam apagados/sem destaque). Borda no verde da marca, uma leve lâmina de
+     cor no fundo (inset box-shadow, acompanha a transição de box-shadow já
+     existente em .kpi) e um anel fino de contorno. Vale pros dois níveis de card
+     (compactos e os "hero" k-obras/k-valor) e nos dois temas. --------------- */
+  :root:not(.theme-dark) .kpi:hover,
+  :root:not(.theme-dark) .kpi.k-obras:hover,
+  :root:not(.theme-dark) .kpi.k-valor:hover{
+        border-color:rgba(var(--ng-rgb),.55);
+        box-shadow:inset 0 0 0 999px rgba(var(--ng-rgb),.05),
+                   0 0 0 1px rgba(var(--ng-rgb),.30),
+                   0 3px 8px rgba(20,40,33,.10),0 14px 30px rgba(20,40,33,.09)}
+  :root.theme-dark .kpi:hover,
+  :root.theme-dark .kpi.k-obras:hover,
+  :root.theme-dark .kpi.k-valor:hover{
+        border-color:rgba(var(--ng-rgb),.50);
+        box-shadow:inset 0 0 0 999px rgba(var(--ng-rgb),.10),
+                   0 0 0 1px rgba(var(--ng-rgb),.32),
+                   0 3px 8px rgba(0,0,0,.32),0 14px 32px rgba(0,0,0,.26)}
+
+  /* "Situação das obras" — 3 mini-cards verticais (a barra empilhada saiu). Mesma
+     linguagem dos KPIs: superfície elevada; claro = sombra, escuro = gradiente+borda. */
+  #statBar{display:none}
+  #statLeg{flex-direction:column;gap:9px;align-items:stretch;margin-top:12px}
+  #statLeg .sit{display:flex;flex-wrap:wrap;align-items:center;gap:0 8px;
+        padding:10px 13px;border-radius:10px;font-size:12px;
+        background:linear-gradient(180deg,var(--card-bg),var(--card-bg-2));border:1px solid var(--card-border)}
+  #statLeg .sit .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  #statLeg .sit-l{color:var(--text-muted);font-weight:600}
+  #statLeg .sit-v{flex-basis:100%;margin-top:4px;color:var(--text-bright);font-family:'Space Grotesk',sans-serif;font-weight:700}
+  #statLeg .sit-p{color:var(--text-dim);font-weight:600;font-family:Montserrat,sans-serif}
+  /* mesma profundidade dos cards: claro = sombra em camadas + topo mais claro;
+     escuro = gradiente/borda + fio de luz no topo + sombra bem suave */
+  :root:not(.theme-dark) #statLeg .sit{border-color:rgba(20,40,33,.12);border-top-color:rgba(20,40,33,.05);
+        box-shadow:0 1px 2px rgba(20,40,33,.05),0 4px 10px rgba(20,40,33,.04),0 8px 18px rgba(20,40,33,.028)}
+  :root.theme-dark #statLeg .sit{border-top-color:rgba(255,255,255,.14);
+        box-shadow:0 1px 2px rgba(0,0,0,.2),0 5px 14px rgba(0,0,0,.14)}
+
+  /* Nível 3 — ranking "Distritos Operacionais" / "Cidades": cartão compacto e discreto,
+     mesma linguagem dos KPIs (superfície levemente elevada), porém menor — é área
+     secundária, não deve competir com os KPIs. A base .rrow já é um cartão (gradiente
+     + borda + raio); aqui só compacta e, no tema claro, acrescenta a sombra suave de
+     elevação (o escuro usa o gradiente/borda para a profundidade, como os KPIs no
+     escuro — sem sombra clara). Hover: elevação de 1px + sombra um pouco maior. */
+  aside .rrow{padding:10px 12px;border-radius:10px;margin-bottom:9px}
+  /* hover: elevação de 1px + sombra maior; borda verde bem mais discreta que a
+     padrão de .rrow:hover (o realce do ranking deve ser elegante, não chamativo). */
+  aside .rrow:hover{transform:translateY(-1px);border-color:rgba(var(--ng-rgb),.22)}
+  :root:not(.theme-dark) aside .rrow{border-color:rgba(20,40,33,.14);
+        box-shadow:0 1px 3px rgba(20,40,33,.055),0 5px 14px rgba(20,40,33,.045)}
+  :root:not(.theme-dark) aside .rrow:hover{box-shadow:0 2px 6px rgba(20,40,33,.08),0 10px 22px rgba(20,40,33,.07)}
+
+  /* ---- Bloco 4 / Parte 4: tooltip e botões de zoom sobre o campo claro do mapa ---- */
+  :root:not(.theme-dark) .leaflet-tooltip{border-color:rgba(var(--ng-rgb),.35);box-shadow:0 4px 16px rgba(20,40,33,.14)}
+  :root:not(.theme-dark) .leaflet-bar{box-shadow:0 2px 10px rgba(20,40,33,.12)}
+  :root:not(.theme-dark) .leaflet-bar a{border-color:rgba(20,40,33,.12)}
+
   *{box-sizing:border-box}
   *::-webkit-scrollbar{width:6px;height:6px}
   *::-webkit-scrollbar-track{background:transparent}
-  *::-webkit-scrollbar-thumb{background-color:rgba(var(--white-rgb),.22);border-radius:999px}
-  *::-webkit-scrollbar-thumb:hover{background-color:rgba(var(--white-rgb),.4)}
+  *::-webkit-scrollbar-thumb{background-color:rgba(var(--raise-rgb),.22);border-radius:999px}
+  *::-webkit-scrollbar-thumb:hover{background-color:rgba(var(--raise-rgb),.4)}
   html,body{margin:0;height:100%}
   body{font-family:Montserrat,system-ui,sans-serif;color:var(--text-base);background:var(--bg-base);
        font-feature-settings:"tnum" 1,"lnum" 1;-webkit-font-smoothing:antialiased}
   header.top{display:flex;align-items:center;gap:16px;padding:15px 24px;position:relative;z-index:700;
              background:linear-gradient(90deg,var(--bg-header-1),var(--bg-header-2) 60%,var(--bg-header-3));
-             border-bottom:1px solid rgba(var(--ng-rgb),.22);box-shadow:0 6px 24px rgba(var(--ink-rgb),.35)}
+             border-bottom:1px solid rgba(var(--ng-rgb),.22);box-shadow:0 6px 24px rgba(var(--shadow-rgb),.35)}
   header.top:after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;
              background:linear-gradient(90deg,transparent,rgba(var(--ng-rgb),.6),transparent)}
   .brand{display:flex;align-items:center;gap:13px}
   .mark{display:grid;place-items:center;flex:none}
   .mark img{height:44px;width:auto;object-fit:contain;
-        filter:drop-shadow(0 3px 8px rgba(var(--ink-rgb),.45)) drop-shadow(0 0 16px rgba(76,193,124,.3))}
+        filter:drop-shadow(0 3px 8px rgba(var(--shadow-rgb),.45)) drop-shadow(0 0 16px rgba(76,193,124,.3))}
   .top h1{font-family:Montserrat,sans-serif;font-size:15.5px;font-weight:800;margin:0;letter-spacing:.15px;color:var(--text-bright)}
   .top .sub{font-family:Montserrat,sans-serif;font-size:10px;color:var(--text-dim);font-weight:700;margin-top:3px;letter-spacing:1.3px;text-transform:uppercase}
   .top .sub .formal{color:var(--text-formal);font-weight:600;text-transform:none;letter-spacing:.2px}
@@ -59,11 +335,23 @@
   .badge .d{width:6px;height:6px;border-radius:50%;background:var(--ng);box-shadow:0 0 8px var(--ng);animation:pulse 1.6s infinite;flex:none}
   .badge.demo{background:rgba(var(--amber-rgb),.10);color:var(--amber-text);border-color:rgba(var(--amber-rgb),.28)}
   .badge.demo .d{background:var(--amber);box-shadow:0 0 8px var(--amber)}
-  .btn-voltar,.btn-present{display:flex;align-items:center;gap:7px;background:rgba(var(--white-rgb),.05);border:1px solid rgba(var(--white-rgb),.14);
+  .btn-voltar,.btn-present{display:flex;align-items:center;gap:7px;background:rgba(var(--raise-rgb),.05);border:1px solid rgba(var(--raise-rgb),.14);
         color:var(--text-base);border-radius:10px;padding:8px 13px;font-family:Montserrat,sans-serif;font-size:11.5px;font-weight:700;
         cursor:pointer;flex:none;transition:.15s}
   .btn-voltar:hover,.btn-present:hover{border-color:rgba(var(--ng-rgb),.4);color:var(--text-brightest);background:rgba(var(--ng-rgb),.08)}
   .btn-present.on{border-color:rgba(var(--ng-rgb),.5);color:var(--ng-light);background:rgba(var(--ng-rgb),.14)}
+  /* Etapa A / Bloco 1 — botão de alternância de tema (só ícone). Mesma linguagem
+     visual dos botões do cabeçalho. O ícone mostrado indica o tema-alvo do clique:
+     no tema escuro aparece o sol (clicar → claro); no claro aparece a lua. */
+  .btn-theme{display:flex;align-items:center;justify-content:center;flex:none;width:34px;height:34px;padding:0;
+        background:rgba(var(--raise-rgb),.05);border:1px solid rgba(var(--raise-rgb),.14);color:var(--text-base);
+        border-radius:10px;cursor:pointer;transition:.15s}
+  .btn-theme:hover{border-color:rgba(var(--ng-rgb),.4);color:var(--text-brightest);background:rgba(var(--ng-rgb),.08)}
+  .btn-theme:focus-visible{outline:2px solid var(--ng);outline-offset:2px}
+  .btn-theme svg{display:block}
+  .btn-theme .ic-sun{display:none}
+  body.theme-dark .btn-theme .ic-sun{display:block}
+  body.theme-dark .btn-theme .ic-moon{display:none}
   /* diferencia visualmente do botão de tela cheia ao lado — os dois usam a mesma
      forma de "pill", mas este controla o ESCOPO DOS DADOS (carteira ativa vs.
      histórico completo), então um clique errado numa apresentação ao vivo troca
@@ -96,8 +384,8 @@
   main.aside-collapsed{grid-template-columns:1fr 0}
   main.aside-collapsed aside{padding:0;border-left:0;overflow:hidden}
   @media (max-width:860px){main.aside-collapsed{grid-template-rows:1fr 0}}
-  #map{width:100%;height:100%;background:var(--bg-base);outline:none}
-  #mapWrap{opacity:0;transform:scale(1.045);transition:opacity 2.8s cubic-bezier(.16,.8,.2,1),transform 2.8s cubic-bezier(.16,.8,.2,1)}
+  #map{width:100%;height:100%;background:var(--map-field);outline:none}
+  #mapWrap{opacity:0;transform:scale(1.045);transition:opacity 1.5s cubic-bezier(.16,.8,.2,1),transform 1.5s cubic-bezier(.16,.8,.2,1)}
   #mapWrap.in{opacity:1;transform:scale(1)}
   /* .ctrl-toggle e .aside-toggle são o mesmo bloco visual (pílula flutuante com blur),
      só o lado que ocupam muda — uma regra combinada evita duas cópias divergindo aos
@@ -106,48 +394,63 @@
      (única forma de ficar legível sobre qualquer cor do mapa embaixo), só a borda e
      a sombra saem do registro "glow" pra um "chip sólido flutuante" mais sóbrio */
   .ctrl-toggle,.aside-toggle{position:absolute;z-index:650;top:14px;display:flex;align-items:center;gap:8px;
-        background:rgba(var(--panel-rgb),.94);backdrop-filter:blur(9px);border:1px solid rgba(255,255,255,.12);color:var(--text-base);
+        background:rgba(var(--panel-rgb),.94);backdrop-filter:blur(9px);border:1px solid rgba(var(--raise-rgb),.12);color:var(--text-base);
         border-radius:11px;padding:9px 13px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;
-        box-shadow:0 6px 18px rgba(var(--ink-rgb),.3)}
+        box-shadow:0 6px 18px rgba(var(--shadow-rgb),.3)}
   .ctrl-toggle:hover,.aside-toggle:hover{border-color:rgba(var(--ng-rgb),.4)}
+  /* Etapa A / Bloco 3 — o traço dos ícones "Filtros" / "Painel" está hardcoded como
+     #8EF0C4 no SVG do HTML. Amarra ao token (só as formas com traço: line/rect; os
+     circle-"botões" ficam como estão). Idêntico no escuro (--ng-light == #8EF0C4);
+     no claro vira esmeralda escuro, legível sobre a pílula clara. */
+  .ctrl-toggle svg line,.ctrl-toggle svg rect,.aside-toggle svg line,.aside-toggle svg rect{stroke:var(--ng-light)}
   .aside-toggle{right:14px}
   .aside-head{display:flex;align-items:center;justify-content:space-between;margin:-2px 0 12px}
   .aside-head span{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-label)}
-  .leaflet-container{background:var(--bg-base);font-family:inherit}
-  .leaflet-tooltip{background:var(--bg-panel);border:1px solid rgba(var(--ng-rgb),.3);color:var(--text-bright);box-shadow:0 4px 14px rgba(var(--ink-rgb),.4)}
+  .leaflet-container{background:var(--map-field);font-family:inherit}
+  .leaflet-tooltip{background:var(--bg-panel);border:1px solid rgba(var(--ng-rgb),.3);color:var(--text-bright);box-shadow:0 4px 14px rgba(var(--shadow-rgb),.4)}
   .leaflet-tooltip:before{border-top-color:rgba(var(--ng-rgb),.3)}
   .leaflet-bar a{background:var(--bg-panel);color:var(--badge-text);border-color:rgba(var(--ng-rgb),.2)}
   .leaflet-bar a:hover{background:var(--bg-hover)}
 
-  .ctrl{position:absolute;z-index:600;top:14px;left:14px;width:264px;color:var(--text-base);display:none;
-        background:rgba(var(--panel-rgb),.94);backdrop-filter:blur(9px);border:1px solid rgba(255,255,255,.12);
-        border-radius:14px;padding:15px;box-shadow:0 10px 28px rgba(var(--ink-rgb),.3)}
+  .ctrl{position:absolute;z-index:600;top:14px;left:14px;width:min(296px,calc(100vw - 28px));color:var(--text-base);display:none;
+        background:rgba(var(--panel-rgb),.94);backdrop-filter:blur(9px);border:1px solid rgba(var(--raise-rgb),.12);
+        border-radius:14px;padding:15px;box-shadow:0 10px 28px rgba(var(--shadow-rgb),.3);
+        max-height:calc(100% - 28px);overflow-y:auto} /* Etapa C: ~14 campos — rola por dentro; 100% = altura do #mapWrap (não da viewport), pra caber no 56vh do mapa em telas ≤860px */
   .ctrl.show{display:block}
   .ctrl-toggle{left:14px}
   .ctrl-head{display:flex;align-items:center;justify-content:space-between;margin:-2px 0 12px}
   .ctrl-head span{font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-label)}
-  .ctrl-close{border:1px solid rgba(var(--white-rgb),.14);background:rgba(var(--white-rgb),.05);color:var(--text-base);border-radius:8px;
+  .ctrl-close{border:1px solid rgba(var(--raise-rgb),.14);background:rgba(var(--raise-rgb),.05);color:var(--text-base);border-radius:8px;
         width:26px;height:26px;cursor:pointer;font-size:14px;line-height:1;display:grid;place-items:center;padding:0}
   .ctrl-close:hover{border-color:rgba(var(--ng-rgb),.4);color:var(--text-brightest)}
   .lbl{font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-label);margin:3px 0 8px}
-  .seg{display:flex;background:rgba(var(--white-rgb),.05);border-radius:9px;padding:3px;gap:3px;margin-bottom:14px}
+  /* "Filtros" + botão "+" (recolhe/expande as ~14 multi-seleções) */
+  .lbl-filtros{display:flex;align-items:center;gap:8px}
+  .filt-toggle{flex:none;width:18px;height:18px;line-height:1;padding:0;display:grid;place-items:center;
+        border:1px solid rgba(var(--raise-rgb),.22);background:rgba(var(--raise-rgb),.06);color:var(--text-label);
+        border-radius:6px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:.12s}
+  .filt-toggle:hover{border-color:rgba(var(--ng-rgb),.45);color:var(--text-brightest)}
+  .filt-toggle[aria-expanded="true"]{background:rgba(var(--ng-rgb),.14);border-color:rgba(var(--ng-rgb),.4);color:var(--ng-light)}
+  .filt-toggle.has-active{background:rgba(var(--ng-rgb),.16);border-color:rgba(var(--ng-rgb),.5);color:var(--ng-light)}
+  #filtersHost[hidden]{display:none}
+  .seg{display:flex;background:rgba(var(--raise-rgb),.05);border-radius:9px;padding:3px;gap:3px;margin-bottom:14px}
   .seg button{flex:1;border:0;background:transparent;font-family:inherit;font-size:12px;font-weight:600;color:var(--text-muted);
               padding:8px 4px;border-radius:7px;cursor:pointer;transition:.15s}
   .seg button.on{background:rgba(var(--ng-rgb),.16);color:var(--text-brightest);box-shadow:inset 0 0 0 1px rgba(var(--ng-rgb),.3)}
-  .fsel{width:100%;background:rgba(var(--white-rgb),.05);border:1px solid rgba(var(--white-rgb),.1);color:var(--text-input);
+  .fsel{width:100%;background:rgba(var(--raise-rgb),.05);border:1px solid rgba(var(--raise-rgb),.1);color:var(--text-input);
         border-radius:8px;padding:8px 9px;font-family:inherit;font-size:12.5px;margin-bottom:8px}
   .fsel option{color:var(--text-on-light)}
   .clearf{border:1px solid rgba(var(--ng-rgb),.25);background:rgba(var(--ng-rgb),.10);color:var(--ng-light);font-family:inherit;
           font-weight:700;font-size:11.5px;padding:7px 10px;border-radius:8px;cursor:pointer;width:100%}
 
   .msel{position:relative;margin-bottom:8px}
-  .msel-btn{width:100%;text-align:left;background:rgba(var(--white-rgb),.05);border:1px solid rgba(var(--white-rgb),.1);color:var(--text-input);
+  .msel-btn{width:100%;text-align:left;background:rgba(var(--raise-rgb),.05);border:1px solid rgba(var(--raise-rgb),.1);color:var(--text-input);
         border-radius:8px;padding:8px 26px 8px 9px;font-family:inherit;font-size:12.5px;cursor:pointer;position:relative}
   .msel-btn:after{content:'▾';position:absolute;right:8px;top:50%;transform:translateY(-50%);color:var(--text-label);font-size:10px}
   .msel.on .msel-btn{border-color:rgba(var(--ng-rgb),.4)}
   .msel-btn .cnt{color:var(--ng-light);font-weight:700}
   .msel-panel{display:none;position:absolute;z-index:20;top:calc(100% + 4px);left:0;width:100%;max-height:200px;overflow:auto;
-        background:var(--bg-modal);border:1px solid rgba(var(--ng-rgb),.25);border-radius:9px;box-shadow:0 14px 34px rgba(var(--ink-rgb),.5);padding:6px}
+        background:var(--bg-modal);border:1px solid rgba(var(--ng-rgb),.25);border-radius:9px;box-shadow:0 14px 34px rgba(var(--shadow-rgb),.5);padding:6px}
   .msel.on .msel-panel{display:block}
   .msel-opt{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:6px;cursor:pointer;font-size:11.5px;color:var(--text-input)}
   .msel-opt:hover{background:rgba(var(--ng-rgb),.10)}
@@ -155,18 +458,39 @@
   .msel-opt.hide{display:none}
   .msel-empty{font-size:11px;color:var(--text-dim);padding:5px 6px}
   .msel-query{display:none;font-size:10px;font-weight:700;color:var(--ng-light);padding:1px 6px 7px;margin-bottom:5px;
-        border-bottom:1px dashed rgba(var(--white-rgb),.12)}
+        border-bottom:1px dashed rgba(var(--raise-rgb),.12)}
   .msel-query.show{display:block}
   .msel-noresult{display:none;font-size:11px;color:var(--text-dim);padding:5px 6px}
   .msel-noresult.show{display:block}
+  /* Etapa C: campo cujo domínio está vazio no recorte atual — desabilitado, não some.
+     .55 mantém o nome do campo legível; o estado desabilitado + cursor comunicam a inação
+     (WCAG 1.4.3 isenta componentes de UI inativos do mínimo de contraste). */
+  .msel.is-empty .msel-btn{opacity:.55;cursor:not-allowed}
+  .msel.is-empty .msel-btn:after{opacity:.4}
+  /* Etapa C: o bloco de chips "Filtros ativos" traz o próprio "Limpar tudo"; o botão
+     antigo do rodapé (#clearF) fica oculto para não duplicar a ação. */
+  #clearF{display:none}
+  /* Etapa C: bloco "Filtros ativos" (chips) — some quando vazio */
+  #filterChips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 10px}
+  #filterChips:empty{display:none}
+  .fchip{cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+    color:var(--ng-light);background:rgba(var(--ng-rgb),.14);border-color:rgba(var(--ng-rgb),.35);transition:.15s}
+  .fchip:hover{background:rgba(var(--status-stop-rgb),.16);border-color:rgba(var(--status-stop-rgb),.5);color:var(--status-stop-text)}
+  .fchip:focus-visible{outline:2px solid var(--ng);outline-offset:2px}
+  .fchip .x{font-size:11px;line-height:1;padding:2px 2px;margin:-2px -3px -2px 0}
+  .fchip-clear{border:0;background:none;color:var(--text-dim);font-family:inherit;font-size:10.5px;font-weight:700;
+    text-decoration:underline;cursor:pointer;padding:4px 4px}
+  .fchip-clear:hover{color:var(--ng-light)}
+  .ctrl-toggle.has-filters::after{content:'';position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;
+    background:var(--ng);box-shadow:0 0 6px var(--ng)}
 
   /* max-width some do menor entre a fração da largura e "sobra 100% menos as duas
      pílulas de chrome (Filtros/Painel) nos cantos" — nas larguras de hoje o % já
      vencia sozinho (nenhuma mudança visual ali), mas numa janela bem mais estreita
      que o breakpoint de 860px o % sozinho deixava a trilha encostar nos toggles */
   .crumb{position:absolute;z-index:600;top:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:9px;
-         background:rgba(var(--panel-rgb),.9);backdrop-filter:blur(9px);border:1px solid rgba(255,255,255,.12);border-radius:999px;
-         padding:9px 17px;font-size:12.5px;color:var(--text-base);box-shadow:0 6px 18px rgba(var(--ink-rgb),.3);
+         background:rgba(var(--panel-rgb),.9);backdrop-filter:blur(9px);border:1px solid rgba(var(--raise-rgb),.12);border-radius:999px;
+         padding:9px 17px;font-size:12.5px;color:var(--text-base);box-shadow:0 6px 18px rgba(var(--shadow-rgb),.3);
          max-width:min(70%,calc(100% - 260px))}
   .crumb a{color:var(--ng-light);cursor:pointer;font-weight:600;white-space:nowrap}
   .crumb a:hover{text-decoration:underline}
@@ -207,7 +531,7 @@
   .crumb-pop{position:absolute;z-index:620;width:320px;height:420px;
         min-width:260px;min-height:160px;max-width:560px;max-height:min(560px,80vh);
         overflow:hidden;background:var(--bg-modal);border:1px solid rgba(var(--ng-rgb),.25);
-        border-radius:12px;box-shadow:0 14px 34px rgba(var(--ink-rgb),.5);
+        border-radius:12px;box-shadow:0 14px 34px rgba(var(--shadow-rgb),.5);
         display:none;flex-direction:column}
   .crumb-pop.show{display:flex}
   /* alça de arrasto (pedido do usuário: deixar o popover onde quiser) — cabeçalho
@@ -223,10 +547,7 @@
         border-radius:0 0 3px 0}
 
 
-  .mun-label,.grp-label,.state-label{background:none;border:0;box-shadow:none;pointer-events:none;width:0!important;height:0!important;overflow:visible}
-  .state-label span{position:absolute;left:0;top:0;transform:translate(-50%,-50%);white-space:nowrap;
-                    font-size:var(--stfs,32px);font-weight:800;letter-spacing:4px;color:var(--text-state-label);text-transform:uppercase;
-                    text-shadow:0 0 14px rgba(var(--ng-rgb),.5)}
+  .mun-label,.grp-label{background:none;border:0;box-shadow:none;pointer-events:none;width:0!important;height:0!important;overflow:visible}
   .mun-label .lbl,.grp-label .lbl{position:absolute;left:0;top:0;transform:translate(-50%,-50%);
                   display:flex;flex-direction:column;align-items:center;white-space:nowrap;gap:1px}
   .mun-label .lbl-name{font-size:var(--munfs,9px);font-weight:600;color:var(--text-data);text-shadow:0 0 2px var(--shadow-ink),0 0 2px var(--shadow-ink),0 1px 2px var(--shadow-ink)}
@@ -236,6 +557,14 @@
                   text-shadow:0 0 3px var(--shadow-ink),0 0 6px rgba(var(--ng-rgb),.32);text-align:center;line-height:1.15}
   .grp-label .lbl-count{font-size:calc(var(--grpfs,10px)*.8);font-weight:700;letter-spacing:.3px;color:var(--ng-light);text-transform:none;
                   text-shadow:0 0 3px var(--shadow-ink),0 0 8px rgba(var(--ng-rgb),.35)}
+  /* Etapa C — rótulo de distrito/município "sem correspondência" (filtro ativo, 0 contratos): esmaecido */
+  .mun-label.nomatch .lbl,.grp-label.nomatch .lbl{opacity:.4}
+  .mun-label.nomatch .lbl-count,.grp-label.nomatch .lbl-count{color:var(--nomatch-label);text-shadow:none}
+
+  /* Etapa D — fade de entrada dos 11 distritos (classes postas/retiradas por
+     enterGroupFade/revealGroupFade; multiplica sobre o estilo do Leaflet). */
+  #map path.grp-enter{opacity:0}
+  #map path.grp-enter.grp-enter-in{opacity:1;transition:opacity .35s ease-out}
 
   aside{position:relative;height:100%;overflow-y:auto;padding:24px 20px 30px;color:var(--text-base);
         border-left:1px solid rgba(var(--ng-rgb),.16);
@@ -251,23 +580,26 @@
      2 KPIs "hero" (.wide, ver abaixo) e no estado de alerta (.alert), onde a cor
      carrega significado; nos 4 cartões compactos (Obras/Paralisadas.../Aditivos)
      virou decoração repetida sem função, então saiu */
-  .kpi{position:relative;overflow:hidden;border-radius:14px;padding:15px 16px;
-       background:linear-gradient(180deg,var(--card-bg),var(--card-bg-2));border:1px solid var(--card-border)}
-  .kpi .k{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-label)}
-  .kpi .v{font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:700;color:var(--text-brightest);margin-top:7px;line-height:1}
-  .kpi.wide{grid-column:1/-1;padding-left:19px;border-color:rgba(var(--ng-rgb),.2)}
-  .kpi.wide::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(var(--ng),var(--ng-deep))}
-  .kpi.wide .v{font-size:24px;text-shadow:0 0 16px rgba(var(--ng-rgb),.22)}
-  body.presentation .kpi.wide .v{font-size:27px}
+  /* grade interna: coluna de texto (1fr) + coluna do ícone (auto). O ícone tem
+     coluna própria — nunca sobrepõe rótulo nem valor, em nenhuma largura. */
+  .kpi{position:relative;overflow:hidden;border-radius:14px;padding:16px 16px;
+       display:grid;grid-template-columns:1fr auto;grid-template-areas:"k ic" "v ic";
+       column-gap:12px;align-items:start;
+       background:linear-gradient(180deg,var(--card-bg),var(--card-bg-2));border:1px solid var(--card-border);
+       transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+  .kpi .k{grid-area:k;font-size:10.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--text-label)}
+  /* o ícone fica centralizado (alinhado ao valor); nos cards compactos o rótulo é um
+     pouco menor para caber numa linha ao lado do espaço do ícone */
+  .kpi.k-par .k,.kpi.k-medio .k,.kpi.k-mun .k,.kpi.k-adit .k{font-size:9.5px;letter-spacing:.1px}
+  .kpi .v{grid-area:v;font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:700;color:var(--text-brightest);margin-top:8px;line-height:1}
+  /* KPIs "nível 1" (.k-obras/.k-valor) e o número em vermelho de Paralisadas (.k-par)
+     ficam no bloco da Rodada 3.2/Parte B, mais acima. */
   body.presentation .kpi .k{font-size:11px}
-  .kpi.alert{padding-left:19px;border-color:rgba(var(--status-stop-rgb),.24)}
-  .kpi.alert::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(var(--status-stop),var(--status-stop-deep))}
-  .kpi.alert .v{color:var(--status-stop-text);text-shadow:0 0 14px rgba(var(--status-stop-rgb),.26)}
   .scope{font-size:12.5px;color:var(--text-label);margin:22px 0 12px;font-weight:600;letter-spacing:.3px}
   .scope b{color:var(--text-brightest)}
 
   .statwrap{margin-top:4px}
-  .stackbar{display:flex;height:11px;border-radius:6px;overflow:hidden;background:rgba(var(--white-rgb),.05)}
+  .stackbar{display:flex;height:11px;border-radius:6px;overflow:hidden;background:rgba(var(--raise-rgb),.05)}
   .stackbar>i{display:block;height:100%;flex:0 0 auto}
   .stackbar>i:not(:last-child){margin-right:2px}
   .stackbar>i:first-child{border-radius:6px 0 0 6px}
@@ -278,8 +610,19 @@
   .statleg .sit .dot{width:8px;height:8px;border-radius:50%;flex:none}
   .statleg .sit b{color:var(--text-brightest);font-family:'Space Grotesk',sans-serif;font-weight:700}
   .sec-h{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-dim);margin:26px 0 12px;display:flex;justify-content:space-between}
-  .ychart{display:block;width:100%;height:56px;overflow:visible}
-  .ychart-lbl{font-size:8px;font-family:Montserrat,sans-serif;fill:var(--text-dim)}
+  /* "Contratos por ano de assinatura" — barras em HTML/flex (não mais SVG esticado):
+     texto sem distorção, valor acima de cada barra, trilho de fundo, ano de pico
+     em destaque. Cores vêm dos tokens, então acompanha os dois temas. */
+  #yearChart .ychart{display:flex;align-items:flex-end;gap:6px;height:96px;padding-top:14px}
+  .ycol{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%}
+  .ycol .yval{font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:700;color:var(--text-dim);line-height:1;min-height:11px}
+  .ycol .ytrack{flex:1;width:100%;max-width:32px;display:flex;align-items:flex-end;
+        background:rgba(var(--raise-rgb),.06);border-radius:5px 5px 0 0;overflow:hidden}
+  .ycol .ybar{width:100%;background:linear-gradient(180deg,var(--ng),var(--ng-deep));border-radius:5px 5px 0 0;transition:filter .15s}
+  .ycol .ylab{font-size:9px;font-weight:600;color:var(--text-dimmer);letter-spacing:.2px;line-height:1}
+  .ycol.peak .yval{color:var(--ng)}
+  .ycol:hover .ybar{filter:brightness(1.08)}
+  .ycol:hover .yval{color:var(--text-brightest)}
 
   /* skeleton: placeholder neutro nos KPIs/gráficos enquanto a 1ª carga de dados ainda
      não chegou — troca o "tudo em branco até aparecer de repente" por um sinal de que
@@ -294,8 +637,8 @@
   .boot-loading .empty{opacity:0}
   .boot-loading .kpi .v{color:transparent;position:relative}
   .boot-loading .kpi .v::after{content:'';position:absolute;left:0;right:24%;top:4px;bottom:4px;
-    border-radius:4px;background:rgba(var(--white-rgb),.10)}
-  .boot-loading #yearChart{min-height:56px;border-radius:6px;background:rgba(var(--white-rgb),.05)}
+    border-radius:4px;background:rgba(var(--raise-rgb),.10)}
+  .boot-loading #yearChart{min-height:96px;border-radius:6px;background:rgba(var(--raise-rgb),.05)}
   .boot-loading .kpi .v::after,.boot-loading .stackbar,.boot-loading #yearChart{
     animation:skeleton-pulse 1.3s ease-in-out infinite}
 
@@ -308,26 +651,40 @@
      quase-transparente de antes — cartão com presença própria contra o fundo do
      aside, borda neutra (cor só aparece no hover/foco, onde sinaliza interação) */
   .rrow{cursor:pointer;border:1px solid var(--card-border);border-radius:11px;padding:12px 14px;margin-bottom:10px;
-        background:linear-gradient(180deg,var(--card-bg),var(--card-bg-2));transition:.15s}
+        background:linear-gradient(180deg,var(--card-bg),var(--card-bg-2));
+        transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+  /* hover discreto (inalterado): o realce forte de "seleção" é só nos cards .obra;
+     no ranking do aside quem manda é `aside .rrow:hover` (borda verde .22 + elevação
+     de 1px), e esta regra não pode ganhar especificidade dele. */
   .rrow:hover{border-color:rgba(var(--ng-rgb),.35);box-shadow:0 0 0 1px rgba(var(--ng-rgb),.15)}
   .rrow .t{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13.5px}
   .rrow .nm{color:var(--text-bright);font-weight:600}
   .rrow .sub2{color:var(--text-dim);font-size:11.5px;font-weight:600}
   .rrow .vv{font-family:'Space Grotesk',sans-serif;color:var(--ng-light);font-weight:700}
-  .rbar{height:6px;border-radius:4px;background:rgba(var(--white-rgb),.07);margin-top:9px;overflow:hidden}
+  .rbar{height:6px;border-radius:4px;background:rgba(var(--raise-rgb),.07);margin-top:9px;overflow:hidden}
   .rbar>i{display:block;height:100%;background:linear-gradient(90deg,var(--ng),var(--ng-deep))}
   .rbar.amber>i{background:linear-gradient(90deg,var(--amber),var(--amber-deep))}
 
   .obra{cursor:pointer;border:1px solid var(--card-border);border-radius:12px;padding:14px 16px;margin-bottom:12px;
-        background:linear-gradient(180deg,var(--card-bg),var(--card-bg-2));transition:.15s}
-  .obra:hover{border-color:rgba(var(--ng-rgb),.35);box-shadow:0 0 0 1px rgba(var(--ng-rgb),.16),0 6px 18px rgba(var(--ink-rgb),.28)}
+        background:linear-gradient(180deg,var(--card-bg),var(--card-bg-2));
+        transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+  /* Etapa 4 — hover "seleção" dos cards de contrato (o pedido: estavam pálidos, sem
+     destaque). Mesma linguagem (e mesma necessidade de prefixar por tema) do hover
+     dos KPIs: borda verde forte + lâmina de cor no fundo (inset) + anel fino +
+     elevação. Sem o prefixo :root, a regra base por tema (:root:not(.theme-dark)
+     .obra) venceria e apagaria a sombra do hover no tema claro. */
+  :root:not(.theme-dark) .obra:hover,
+  :root.theme-dark .obra:hover{transform:translateY(-2px);border-color:rgba(var(--ng-rgb),.52);
+        box-shadow:inset 0 0 0 999px rgba(var(--ng-rgb),.05),
+                   0 0 0 1px rgba(var(--ng-rgb),.30),
+                   0 8px 20px rgba(var(--shadow-rgb),.28)}
   .obra .r1{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
   .obra .ct{font-size:12px;font-weight:700;color:var(--ng-mid);letter-spacing:.3px}
   .obra .vl{font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;color:var(--text-brightest)}
   .obra .ob{font-size:13.5px;color:var(--text-body2);margin-top:5px;line-height:1.45}
   .obra .ob.just{text-align:justify}
   .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
-  .chip{font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid rgba(var(--white-rgb),.12);color:var(--text-chip)}
+  .chip{font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid rgba(var(--raise-rgb),.12);color:var(--text-chip)}
   .chip.tram{color:var(--amber-text-2);background:rgba(var(--amber-rgb),.12);border-color:rgba(var(--amber-rgb),.3)}
   .chip.mun{color:var(--ng-light);background:rgba(var(--ng-rgb),.10);border-color:rgba(var(--ng-rgb),.28)}
   .chip.mun.locate{cursor:pointer;display:inline-flex;align-items:center;gap:3px;transition:.15s}
@@ -338,7 +695,7 @@
   .chip-sel{cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin:0 6px 6px 0;
     color:var(--ng-light);background:rgba(var(--ng-rgb),.14);border-color:rgba(var(--ng-rgb),.35);transition:.15s}
   .chip-sel:hover{background:rgba(var(--status-stop-rgb),.16);border-color:rgba(var(--status-stop-rgb),.5);color:var(--status-stop-text)}
-  .obra .info{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-top:13px;padding-top:13px;border-top:1px dashed rgba(var(--white-rgb),.12)}
+  .obra .info{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-top:13px;padding-top:13px;border-top:1px dashed rgba(var(--raise-rgb),.12)}
   .obra .info .l{font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
   .obra .info .d{font-size:13px;color:var(--text-data);font-weight:600;margin-top:3px}
   .obra .info .fis{grid-column:1/-1}
@@ -346,31 +703,57 @@
   /* modal */
   .modal-bg{position:fixed;inset:0;z-index:2000;background:rgba(3,10,7,.72);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;padding:24px}
   .modal-bg.show{display:flex}
-  .modal{width:min(880px,96vw);max-height:90vh;overflow:auto;background:linear-gradient(180deg,var(--bg-modal),var(--bg-modal-2));
-         border:1px solid rgba(var(--ng-rgb),.25);border-radius:16px;box-shadow:0 24px 70px rgba(var(--ink-rgb),.6);padding:0}
+  .modal{width:min(1180px,96vw);max-height:94vh;overflow:auto;background:linear-gradient(180deg,var(--bg-modal),var(--bg-modal-2));
+         border:1px solid rgba(var(--ng-rgb),.25);border-radius:16px;box-shadow:0 24px 70px rgba(var(--shadow-rgb),.6);padding:0}
   .modal::-webkit-scrollbar{width:8px}.modal::-webkit-scrollbar-thumb{background:rgba(var(--ng-rgb),.2);border-radius:8px}
   .modal .mh{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
-         background:linear-gradient(180deg,var(--bg-modal),var(--bg-modal) 80%,transparent);padding:22px 26px 14px;border-bottom:1px solid rgba(var(--white-rgb),.08)}
+         background:linear-gradient(180deg,var(--bg-modal),var(--bg-modal) 80%,transparent);padding:22px 26px 14px;border-bottom:1px solid rgba(var(--raise-rgb),.08)}
+  .modal .mh-titles{min-width:0}
   .modal .mt{font-family:Montserrat,sans-serif;font-size:19px;font-weight:700;color:var(--ng-mid)}
-  .modal .mx{border:1px solid rgba(var(--white-rgb),.14);background:rgba(var(--white-rgb),.05);color:var(--text-base);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:15px;flex:none;font-family:Montserrat,sans-serif}
+  /* subtítulo "Resumo executivo do contrato" — só na aba Resumo (o .mtop carrega data-tab) */
+  .modal .msub{display:flex;align-items:center;gap:6px;margin-top:4px;
+        font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;letter-spacing:.4px;
+        text-transform:uppercase;color:var(--text-dim)}
+  .modal .msub svg{width:13px;height:13px;flex:none;stroke:currentColor}
+  .modal .mtop:not([data-tab="resumo"]) .msub{display:none}
+  /* identificação da obra (contratos multi-obra) — persiste em todas as abas */
+  .modal .mobra{display:flex;align-items:center;gap:6px;margin-top:4px;
+        font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;letter-spacing:.3px;color:var(--ng-mid)}
+  .modal .mobra svg{width:13px;height:13px;flex:none;stroke:currentColor}
+  /* aviso de escopo (obra × contrato) dentro dos painéis de aditivo/medição */
+  .modal .adv-scope-note{font-family:Montserrat,sans-serif;font-size:10.5px;line-height:1.45;color:var(--text-dim);
+        background:rgba(var(--ng-rgb),.06);border:1px solid rgba(var(--ng-rgb),.14);border-radius:9px;padding:9px 12px;margin-bottom:12px}
+  .modal .adp-wrap .adv-scope-note{margin-bottom:0} /* .adp-wrap já tem gap:16px */
+  .modal .mx{border:1px solid rgba(var(--raise-rgb),.14);background:rgba(var(--raise-rgb),.05);color:var(--text-base);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:15px;flex:none;font-family:Montserrat,sans-serif}
+  /* Etapa B: ações do cabeçalho do modal — "Localizar no mapa" + fechar */
+  .modal .mh-actions{display:flex;align-items:center;gap:8px;flex:none}
+  .modal .m-locate{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;cursor:pointer;
+        border:1px solid rgba(var(--raise-rgb),.14);background:rgba(var(--raise-rgb),.05);color:var(--text-base);
+        border-radius:8px;font-family:Montserrat,sans-serif;font-size:11.5px;font-weight:700;letter-spacing:.2px;transition:.15s;white-space:nowrap}
+  .modal .m-locate svg{width:12px;height:12px;flex:none}
+  .modal .m-locate:hover{border-color:rgba(var(--ng-rgb),.4);color:var(--ng-light);background:rgba(var(--ng-rgb),.06)}
+  .modal .m-locate:focus-visible{outline:2px solid var(--ng);outline-offset:2px}
+  .modal .m-locate:disabled{opacity:.45;cursor:not-allowed}
+  .modal .m-locate:disabled:hover{border-color:rgba(var(--raise-rgb),.14);color:var(--text-base);background:rgba(var(--raise-rgb),.05)}
+  @media (max-width:520px){ .modal .m-locate span{display:none} .modal .m-locate{padding:0 10px} }
   .modal .mbody{padding:18px 26px 26px;font-family:Montserrat,sans-serif}
   .modal .mobj{font-size:14px;color:var(--text-obj);margin:0 0 4px;text-align:justify;line-height:1.55;font-family:Montserrat,sans-serif}
   .modal .msec{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-label);margin:18px 0 10px;font-family:Montserrat,sans-serif;
-        border-top:1px solid rgba(var(--white-rgb),.08);padding-top:14px}
+        border-top:1px solid rgba(var(--raise-rgb),.08);padding-top:14px}
   .modal .msec:first-of-type{border-top:0;padding-top:0}
   .modal .mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 20px}
   @media (max-width:640px){ .modal .mgrid{grid-template-columns:1fr 1fr} }
   .modal .mgrid .l{font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);font-family:Montserrat,sans-serif}
   .modal .mgrid .d{font-size:14px;color:var(--text-data);font-weight:600;margin-top:3px;word-break:break-word;font-family:Montserrat,sans-serif}
-  .modal .mupd{font-size:10px;color:var(--text-dimmer);margin-top:18px;padding-top:12px;border-top:1px solid rgba(var(--white-rgb),.08);font-family:Montserrat,sans-serif}
+  .modal .mupd{font-size:10px;color:var(--text-dimmer);margin-top:18px;padding-top:12px;border-top:1px solid rgba(var(--raise-rgb),.08);font-family:Montserrat,sans-serif}
   /* abas do modal (Dados Gerais/Aditivos/Medições) — cabeçalho+trilha de abas ficam
      juntos num wrapper sticky (em vez de só .mh) pra não precisar cravar um top:Npx
      fixo pra .mtabs; o fade da .mh original continua servindo de transição visual
      pro fundo sólido da trilha logo abaixo, dentro do mesmo bloco fixo no topo. */
   .modal .mtop{position:sticky;top:0;z-index:2;background:var(--bg-modal)}
   .modal .mtop .mh{border-bottom:0}
-  .modal .mtabs{display:flex;gap:6px;padding:0 26px 14px;overflow-x:auto;border-bottom:1px solid rgba(var(--white-rgb),.08)}
-  .modal .mtab{flex:none;cursor:pointer;border:1px solid var(--card-border);background:var(--card-bg-2);color:var(--text-muted);
+  .modal .mtabs{display:flex;gap:6px;padding:0 26px 14px;overflow-x:auto;border-bottom:1px solid rgba(var(--raise-rgb),.08)}
+  .modal .mtab{flex:none;white-space:nowrap;cursor:pointer;border:1px solid var(--card-border);background:var(--card-bg-2);color:var(--text-muted);
         border-radius:999px;padding:7px 16px;font-family:Montserrat,sans-serif;font-size:11.5px;font-weight:700;letter-spacing:.3px;transition:.15s}
   .modal .mtab:hover{border-color:rgba(var(--ng-rgb),.35);color:var(--text-bright)}
   .modal .mtab.on{background:rgba(var(--ng-rgb),.14);border-color:rgba(var(--ng-rgb),.45);color:var(--ng-light)}
@@ -382,18 +765,130 @@
   .modal .mkpi{border:1px solid var(--card-border);background:var(--card-bg-2);border-radius:12px;padding:13px 14px}
   .modal .mkpi .l{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-label)}
   .modal .mkpi .v{font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700;color:var(--text-brightest);margin-top:6px;line-height:1.15;word-break:break-word}
-  /* fiscal + botão discreto pra ver a comissão completa (Dados da obra) */
-  .modal .mfiscal{margin-top:14px}
-  .modal .mfiscal .l{font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
-  .modal .mfiscal .d{font-size:14px;color:var(--text-data);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .modal .mcomBtn{border:1px solid var(--card-border);background:var(--card-bg-2);color:var(--text-label);
-        border-radius:999px;padding:3px 11px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:Montserrat,sans-serif;transition:.15s}
-  .modal .mcomBtn:hover{border-color:rgba(var(--ng-rgb),.35);color:var(--text-bright)}
+  /* link de ação em texto (ex.: "ver aba →" no cartão de identificação do Resumo) */
+  .modal .mlink{background:none;border:0;padding:0;cursor:pointer;color:var(--ng-light);
+        font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;letter-spacing:.2px}
+  .modal .mlink:hover{text-decoration:underline}
+  .modal .mlink:focus-visible{outline:2px solid var(--ng);outline-offset:2px;border-radius:3px}
+
+  /* ===== Etapa B — dashboard da aba Resumo (modelo janela_contrato_melhorado; cor via var(--...), SVG inline) ===== */
+  .modal .mbody[data-tab="resumo"] .mobj{display:none} /* o objeto está no cartão de identificação */
+  /* :not([hidden]) — o seletor de id venceria [hidden]{display:none} por especificidade;
+     sem isso a aba Resumo continua visível "por baixo" ao trocar para outra aba. */
+  .modal #mPaneResumo:not([hidden]){display:flex;flex-direction:column;gap:14px;padding-top:4px}
+  .modal .rs-row{display:grid;gap:12px}
+  .modal .rs-lbl{font-family:Montserrat,sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.5px;
+        text-transform:uppercase;color:var(--text-dim);display:flex;align-items:center;gap:5px}
+  .modal .rs-lbl svg{width:12px;height:12px;flex:none}
+  .modal .rs-ic{width:28px;height:28px;border-radius:8px;flex:none;display:grid;place-items:center;
+        color:var(--ng);background:rgba(var(--ng-rgb),.12);border:1px solid rgba(var(--ng-rgb),.2)}
+  .modal .rs-ic svg{width:15px;height:15px}
+  /* Etapa 4/10 — superfície ÚNICA para os cards do modal (Resumo + faixas de
+     indicadores das abas Aditivos/Medições): gradiente leve + sombra de profundidade
+     por tema (o claro com alphas bem menores, como os KPIs claros). Fecha o
+     "esbranquiçado" do tema light. Padding/raio ficam em cada regra-base (variam). */
+  .modal .rs-card,.modal .rs-id,.modal .rs-st,.modal .rs-chartbox,.modal .rs-att,.modal .rs-fi-card,
+  .modal .adv-c,.modal .med-c,.modal .adp-mini{
+        background:linear-gradient(180deg,var(--card-bg),var(--card-bg-2));
+        transition:box-shadow .16s ease,border-color .16s ease}
+  .modal .rs-card,.modal .rs-id,.modal .rs-st,.modal .rs-chartbox,.modal .rs-att,.modal .rs-fi-card{
+        border:1px solid var(--card-border);border-radius:12px;padding:14px 16px}
+  :root:not(.theme-dark) .modal .rs-card,:root:not(.theme-dark) .modal .rs-id,
+  :root:not(.theme-dark) .modal .rs-st,:root:not(.theme-dark) .modal .rs-chartbox,
+  :root:not(.theme-dark) .modal .rs-att,:root:not(.theme-dark) .modal .rs-fi-card,
+  :root:not(.theme-dark) .modal .adv-c,:root:not(.theme-dark) .modal .med-c,:root:not(.theme-dark) .modal .adp-mini{
+        box-shadow:0 1px 2px rgba(var(--shadow-rgb),.06),0 6px 16px rgba(var(--shadow-rgb),.05)}
+  :root.theme-dark .modal .rs-card,:root.theme-dark .modal .rs-id,
+  :root.theme-dark .modal .rs-st,:root.theme-dark .modal .rs-chartbox,
+  :root.theme-dark .modal .rs-att,:root.theme-dark .modal .rs-fi-card,
+  :root.theme-dark .modal .adv-c,:root.theme-dark .modal .med-c,:root.theme-dark .modal .adp-mini{
+        box-shadow:0 6px 18px rgba(var(--shadow-rgb),.28)}
+  /* hover: borda verde discreta (~.32) + sombra um pouco maior. Sem anel/lâmina —
+     estes cards não são clicáveis, só ganham "vida". */
+  .modal .rs-card:hover,.modal .rs-st:hover,.modal .rs-fi-card:hover,
+  .modal .adv-c:hover,.modal .med-c:hover,.modal .adp-mini:hover{border-color:rgba(var(--ng-rgb),.32)}
+  :root.theme-dark .modal .rs-card:hover,:root.theme-dark .modal .rs-st:hover,:root.theme-dark .modal .rs-fi-card:hover,
+  :root.theme-dark .modal .adv-c:hover,:root.theme-dark .modal .med-c:hover,:root.theme-dark .modal .adp-mini:hover{
+        box-shadow:0 10px 26px rgba(var(--shadow-rgb),.4)}
+  :root:not(.theme-dark) .modal .rs-card:hover,:root:not(.theme-dark) .modal .rs-st:hover,:root:not(.theme-dark) .modal .rs-fi-card:hover,
+  :root:not(.theme-dark) .modal .adv-c:hover,:root:not(.theme-dark) .modal .med-c:hover,:root:not(.theme-dark) .modal .adp-mini:hover{
+        box-shadow:0 2px 4px rgba(var(--shadow-rgb),.08),0 10px 24px rgba(var(--shadow-rgb),.07)}
+  .modal .rs-hero:hover{border-color:rgba(var(--ng-rgb),.55)}
+  /* Etapa 10 — elevação (um degrau abaixo dos cards) nos contêineres grandes. */
+  :root:not(.theme-dark) .modal .adv-table,:root:not(.theme-dark) .modal .med-table,
+  :root:not(.theme-dark) .modal .adp-block,:root:not(.theme-dark) .modal .adv-limite,
+  :root:not(.theme-dark) .modal .mcomlist{box-shadow:0 1px 2px rgba(var(--shadow-rgb),.06),0 8px 20px rgba(var(--shadow-rgb),.045)}
+  :root.theme-dark .modal .adv-table,:root.theme-dark .modal .med-table,
+  :root.theme-dark .modal .adp-block,:root.theme-dark .modal .adv-limite,
+  :root.theme-dark .modal .mcomlist{box-shadow:0 6px 20px rgba(var(--shadow-rgb),.24)}
+  /* R1 — cartão de identificação */
+  .modal .rs-id{display:flex;flex-direction:column;gap:12px}
+  .modal .rs-obj-txt{font-family:Montserrat,sans-serif;font-size:13.5px;font-weight:700;color:var(--text-brightest);line-height:1.4;margin-top:4px}
+  .modal .rs-id-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;
+        padding-top:12px;border-top:1px dashed var(--card-border)}
+  @media (max-width:720px){ .modal .rs-id-grid{grid-template-columns:1fr 1fr} }
+  .modal .rs-id-v{font-family:Montserrat,sans-serif;font-size:13px;font-weight:700;color:var(--text-data);margin-top:3px;line-height:1.3}
+  .modal .rs-id-sub{font-family:Montserrat,sans-serif;font-size:11px;color:var(--text-dim);margin-top:3px}
+  .modal .rs-id-sub .mlink{font-size:11px}
+  /* R2 — cartões de status */
+  .modal .rs-status{grid-template-columns:1fr 1fr}
+  @media (max-width:640px){ .modal .rs-status{grid-template-columns:1fr} }
+  .modal .rs-st{display:flex;flex-direction:column;gap:9px}
+  .modal .rs-st-head{display:flex;align-items:center;gap:12px}
+  .modal .rs-st-dot{width:11px;height:11px;border-radius:50%;flex:none}
+  .modal .rs-st-word{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;line-height:1.15;margin-top:2px}
+  .modal .rs-st-dates{display:flex;justify-content:space-between;font-family:Montserrat,sans-serif;font-size:10.5px;color:var(--text-muted);font-weight:600}
+  .modal .rs-st-track{height:7px;border-radius:5px;background:rgba(var(--raise-rgb),.12);overflow:hidden}
+  .modal .rs-st-track i{display:block;height:100%;border-radius:5px}
+  .modal .rs-st-days{font-family:Montserrat,sans-serif;font-size:12px;font-weight:700}
+  .modal .rs-st-paral{font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;color:var(--status-stop-text);
+        background:rgba(var(--status-stop-rgb),.12);border-radius:7px;padding:6px 9px}
+  /* R3 — faixa de 4 indicadores */
+  .modal .rs-ind{grid-template-columns:repeat(4,minmax(0,1fr))}
+  @media (max-width:720px){ .modal .rs-ind{grid-template-columns:1fr 1fr} }
+  .modal .rs-card{display:flex;flex-direction:column;gap:6px;min-width:0;overflow:hidden}
+  .modal .rs-num{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:var(--text-brightest);line-height:1.15;white-space:nowrap}
+  .modal .rs-num.big{font-size:18px}
+  .modal .rs-card-sub{font-family:Montserrat,sans-serif;font-size:10.5px;color:var(--text-dim)}
+  .modal .rs-hero{position:relative;border-color:rgba(var(--ng-rgb),.4);
+        background:linear-gradient(160deg,rgba(var(--ng-rgb),.17),rgba(var(--ng-rgb),.06))}
+  .modal .rs-hero::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(var(--ng),var(--ng-deep))}
+  .modal .rs-hero .rs-lbl{padding-right:28px}
+  .modal .rs-hero .rs-ic{position:absolute;right:10px;top:12px;width:24px;height:24px}
+  .modal .rs-hero .rs-ic svg{width:13px;height:13px}
+  .modal .rs-bar{height:6px;border-radius:4px;background:rgba(var(--raise-rgb),.12);overflow:hidden;margin-top:2px}
+  .modal .rs-bar i{display:block;height:100%;border-radius:4px;background:var(--ng)}
+  .modal .rs-bar i.g{background:var(--ng)}
+  .modal .rs-bar i.b{background:var(--status-exec)}
+  /* R4 — curva de evolução da medição */
+  .modal .rs-chartbox{display:flex;flex-direction:column;gap:8px}
+  .modal .rs-cb-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .modal .rs-cb-sub{font-family:Montserrat,sans-serif;font-size:10.5px;color:var(--text-dim);font-weight:600}
+  .modal .rs-lc{width:100%;height:200px;display:block}
+  .modal .rs-lc-grid{stroke:rgba(var(--raise-rgb),.10);stroke-width:1}
+  .modal .rs-lc-area{fill:rgba(var(--ng-rgb),.13);stroke:none}
+  .modal .rs-lc-line{fill:none;stroke:var(--ng);stroke-width:2}
+  .modal .rs-lc circle{fill:var(--ng)}
+  .modal .rs-lc-lab{fill:var(--text-dim);font-size:9px;font-family:Montserrat,sans-serif}
+  .modal .rs-lc-val{fill:var(--text-brightest);font-size:11px;font-weight:700;font-family:'Space Grotesk',sans-serif}
+  /* R5 — pontos de atenção */
+  .modal .rs-att{display:flex;flex-direction:column;gap:10px}
+  .modal .rs-att-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px}
+  @media (max-width:640px){ .modal .rs-att-grid{grid-template-columns:1fr} }
+  .modal .rs-att-i{display:flex;gap:9px;align-items:flex-start;font-family:Montserrat,sans-serif;font-size:12px;line-height:1.4;color:var(--text-data);font-weight:600}
+  .modal .rs-att-i i{width:7px;height:7px;border-radius:50%;flex:none;margin-top:5px}
+  /* aba Fiscalização (Etapa B / Bloco 3) — cartões de fiscal responsável / suplente
+     na mesma linguagem do dashboard do Resumo */
+  .modal .rs-fi-top{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:4px}
+  .modal .rs-fi-card{display:flex;gap:12px;align-items:flex-start}
+  .modal .rs-fi-nome{font-family:Montserrat,sans-serif;font-size:14px;font-weight:700;color:var(--text-brightest);margin-top:3px;line-height:1.3}
+  .modal .rs-fi-func{font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--text-label);margin-top:3px}
   .modal .mcomlist{margin-top:10px;border:1px solid var(--card-border);border-radius:12px;padding:4px 14px;background:var(--card-bg-2)}
   .modal .mcomrow{display:flex;justify-content:space-between;gap:12px;padding:8px 0;font-size:12.5px}
-  .modal .mcomrow+.mcomrow{border-top:1px solid rgba(var(--white-rgb),.06)}
+  .modal .mcomrow+.mcomrow{border-top:1px solid rgba(var(--raise-rgb),.06)}
   .modal .mcomtipo{color:var(--text-label);font-weight:700;font-size:10.5px;letter-spacing:.3px;text-transform:uppercase;flex:none}
   .modal .mcomnome{color:var(--text-data);font-weight:600;text-align:right}
+  .modal .mcommat{color:var(--text-dim);font-weight:600;text-transform:none;letter-spacing:0}
   /* anel/gauge (Medições) — layout chart+legenda lado a lado; legenda reutilizada
      também pela barra de repercussão zerada da aba Aditivos (caso raro) */
   .modal .donut-wrap{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:14px 0 4px}
@@ -401,10 +896,10 @@
   .modal .pie-leg{display:flex;flex-direction:column;gap:8px}
   .modal .pie-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-muted);font-weight:600}
   .modal .pie-dot{width:10px;height:10px;border-radius:50%;flex:none}
-  .modal .pie-dot.neutral{background:rgba(var(--white-rgb),.18)}
+  .modal .pie-dot.neutral{background:rgba(var(--raise-rgb),.18)}
   .modal .pie-l{min-width:84px}
   .modal .pie-v{color:var(--text-brightest);font-family:'Space Grotesk',sans-serif;font-weight:700}
-  .modal .donut-track{stroke:rgba(var(--white-rgb),.09)}
+  .modal .donut-track{stroke:rgba(var(--raise-rgb),.09)}
   .modal .donut-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
         font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:700;color:var(--text-brightest)}
   /* barras DIVERGENTES Acréscimo/Supressão/Repercussão (aba Aditivos, aditivos de
@@ -416,8 +911,8 @@
   .modal .divbar-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12.5px}
   .modal .divbar-l{color:var(--text-muted);font-weight:600}
   .modal .divbar-v{font-family:'Space Grotesk',sans-serif;font-weight:700}
-  .modal .divbar-track{position:relative;height:8px;border-radius:5px;background:rgba(var(--white-rgb),.07);margin-top:8px;overflow:visible}
-  .modal .divbar-mid{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:rgba(var(--white-rgb),.3);transform:translateX(-1px)}
+  .modal .divbar-track{position:relative;height:8px;border-radius:5px;background:rgba(var(--raise-rgb),.07);margin-top:8px;overflow:visible}
+  .modal .divbar-mid{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:rgba(var(--raise-rgb),.3);transform:translateX(-1px)}
   .modal .divbar-fill{position:absolute;top:0;bottom:0;border-radius:5px}
   /* botão discreto que expande a lista de cards de aditivo (valor/prazo) — mesmo
      visual do botão "Comissão completa" de Dados Gerais */
@@ -431,7 +926,7 @@
   .modal .tl-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12.5px}
   .modal .tl-l{color:var(--text-muted);font-weight:600}
   .modal .tl-days{font-family:'Space Grotesk',sans-serif;font-weight:700}
-  .modal .tl-track{height:8px;border-radius:5px;background:rgba(var(--white-rgb),.07);margin-top:6px;overflow:hidden}
+  .modal .tl-track{height:8px;border-radius:5px;background:rgba(var(--raise-rgb),.07);margin-top:6px;overflow:hidden}
   .modal .tl-track>i{display:block;height:100%;border-radius:5px}
   .modal .tl-dates{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-dimmer);margin-top:5px}
   /* lista de aditivos */
@@ -441,18 +936,137 @@
   .modal .adnum{font-weight:700;color:var(--text-bright);font-family:'Space Grotesk',sans-serif}
   .modal .addate{margin-left:auto;font-size:11px;color:var(--text-dim);font-weight:600}
   .modal .adproto{font-size:11px;color:var(--text-dim);margin-top:5px}
-  .modal .advals{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;margin-top:10px}
-  .modal .advals .l{font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--text-dim)}
-  .modal .advals .d{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;margin-top:2px}
-  .modal .ad-pos{color:var(--ng-light)}
-  .modal .ad-neg{color:var(--status-stop-text)}
-  .modal .adprazo{margin-top:9px;font-size:11.5px;color:var(--amber-text);font-weight:600}
-  @media (max-width:640px){ .modal .mkpis{grid-template-columns:1fr 1fr} .modal .advals{grid-template-columns:1fr 1fr} }
+  .modal .adobs{font-family:Montserrat,sans-serif;font-size:11px;color:var(--text-dim);margin-top:5px;line-height:1.4}
+  @media (max-width:640px){ .modal .mkpis{grid-template-columns:1fr 1fr} }
   @media (max-width:420px){ .modal .mkpis{grid-template-columns:1fr} }
+  /* ===== Etapa B / Bloco 4 — aba "Aditivos de valor" (modelo janela_contrato_melhorado) ===== */
+  .modal .adv-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:2px 0 14px}
+  .modal .adv-c{border:1px solid var(--card-border);border-radius:12px;padding:13px 14px;min-width:0} /* superfície: ver bloco Etapa 4/10 */
+  .modal .adv-n{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:var(--text-brightest);line-height:1.15;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .modal .adv-n.pos{color:var(--ng-light)} .modal .adv-n.neg{color:var(--status-stop-text)} .modal .adv-n.zero{color:var(--text-dim)}
+  .modal .adv-s{font-family:Montserrat,sans-serif;font-size:10.5px;color:var(--text-dim);margin-top:3px}
+  .modal .adv-s.pos{color:var(--ng-light)} .modal .adv-s.neg{color:var(--status-stop-text)} .modal .adv-s.zero{color:var(--text-dim)}
+  .modal .adv-hero{position:relative;border-color:rgba(var(--ng-rgb),.4);background:linear-gradient(160deg,rgba(var(--ng-rgb),.17),rgba(var(--ng-rgb),.06))}
+  .modal .adv-hero::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(var(--ng),var(--ng-deep))}
+  .modal .adv-table{border:1px solid var(--card-border);border-radius:12px;background:var(--card-bg-2);overflow:hidden}
+  .modal .adv-thead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;padding:13px 16px;border-bottom:1px solid var(--card-border)}
+  .modal .adv-note{font-family:Montserrat,sans-serif;font-size:10px;color:var(--text-dim);font-weight:600}
+  .modal .adv-scroll{overflow-x:auto}
+  /* Etapa 5 — grid mais folgado: nº do processo com largura pra não cortar, Publicação
+     sem quebra. Cada linha = .adv-rmain (o grid) + uma .adv-obs opcional (a descrição
+     do aditivo, largura toda). Na célula de valor o NÚMERO nunca quebra (.adv-v nowrap);
+     a pílula de % pode descer pra segunda linha em tela estreita, como no mockup. */
+  .modal .adv-grid{min-width:760px}
+  .modal .adv-hrow,.modal .adv-rmain{display:grid;grid-template-columns:46px minmax(140px,1.35fr) 100px repeat(3,minmax(116px,1fr));gap:0 12px;padding:11px 16px;align-items:center}
+  .modal .adv-hrow{background:rgba(var(--raise-rgb),.04);border-bottom:1px solid var(--card-border);
+        font-family:Montserrat,sans-serif;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
+  .modal .adv-hrow .r{text-align:right}
+  .modal .adv-row{border-bottom:1px solid rgba(var(--raise-rgb),.06);font-family:'Space Grotesk',sans-serif;font-size:12.5px}
+  .modal .adv-row.odd{background:rgba(var(--raise-rgb),.02)}
+  .modal .adv-row:last-child{border-bottom:0}
+  .modal .adv-num{font-weight:700;color:var(--ng-mid)}
+  .modal .adv-nup{min-width:0;font-family:Montserrat,sans-serif}
+  .modal .adv-nup-p{display:block;font-family:'Space Grotesk',sans-serif;font-weight:700;color:var(--text-data);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .modal .adv-pub{font-weight:600;color:var(--text-data);white-space:nowrap}
+  .modal .adv-cell{display:flex;flex-direction:row-reverse;flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:4px 6px;min-width:0}
+  .modal .adv-v{font-weight:700;white-space:nowrap}
+  /* linha de descrição (observacao) — igual nas duas tabelas de aditivo. Indentação
+     74px = 16 (padding) + 46 (coluna Nº) + 12 (gap) = início da coluna do processo. */
+  .modal .adv-obs,.modal .adp-obs{padding:0 16px 11px 74px;margin-top:-5px;
+        font-family:Montserrat,sans-serif;font-size:10.5px;line-height:1.4;color:var(--text-dim)}
+  .modal .adv-v.pos{color:var(--ng-light)} .modal .adv-v.neg{color:var(--status-stop-text)} .modal .adv-v.zero{color:var(--text-dim)}
+  .modal .adv-pill{font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:700;line-height:1;padding:4px 7px;border-radius:999px;white-space:nowrap}
+  .modal .adv-pill.pos{background:rgba(var(--ng-rgb),.14);color:var(--ng-light)}
+  .modal .adv-pill.neg{background:rgba(var(--status-stop-rgb),.16);color:var(--status-stop-text)}
+  .modal .adv-limite{margin-top:14px;background:var(--card-bg-2);border:1px solid var(--card-border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:9px}
+  .modal .adv-lim-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-family:Montserrat,sans-serif;font-size:11.5px;font-weight:600;color:var(--text-muted)}
+  .modal .adv-lim-row b{font-family:'Space Grotesk',sans-serif;font-size:14px}
+  .modal .adv-lim-bar{height:10px;border-radius:5px;background:rgba(var(--raise-rgb),.1);overflow:hidden}
+  .modal .adv-lim-bar i{display:block;height:100%;border-radius:5px}
+  .modal .adv-lim-txt{font-family:Montserrat,sans-serif;font-size:11.5px;font-weight:600}
+  /* ===== Etapa B / Bloco 5 — aba "Aditivos de prazo" (modelo janela_contrato_melhorado) ===== */
+  .modal .adp-wrap{display:flex;flex-direction:column;gap:16px}
+  .modal .adp-block{border:1px solid var(--card-border);border-radius:12px;background:var(--card-bg-2);overflow:hidden}
+  .modal .adp-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+        padding:14px 16px;border-bottom:1px solid var(--card-border)}
+  .modal .adp-h{font-family:Montserrat,sans-serif;font-size:12px;font-weight:800;letter-spacing:.3px;color:var(--text-brightest)}
+  .modal .adp-sub{font-family:Montserrat,sans-serif;font-size:10px;color:var(--text-dim);margin-top:2px}
+  .modal .adp-trio{display:flex;gap:20px;flex:none}
+  .modal .adp-trio>div{text-align:right}
+  .modal .adp-d{font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;color:var(--text-data);margin-top:3px;white-space:nowrap}
+  .modal .adp-minis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;padding:14px 16px 8px}
+  .modal .adp-cal-note{padding:0 16px 12px;font-family:Montserrat,sans-serif;font-size:10px;color:var(--text-dim);border-bottom:1px solid var(--card-border)}
+  .modal .adp-mini{border:1px solid var(--card-border);border-radius:10px;padding:12px 13px} /* superfície: ver bloco Etapa 4/10 */
+  .modal .adp-mv{font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700;color:var(--text-brightest);margin-top:5px}
+  .modal .adp-mini-bar{height:6px;border-radius:4px;background:rgba(var(--raise-rgb),.12);overflow:hidden;margin-top:8px}
+  .modal .adp-mini-bar i{display:block;height:100%;border-radius:4px}
+  .modal .adp-scroll{overflow-x:auto}
+  /* Etapa 5 — mesmo tratamento da tabela de aditivos de valor (grid folgado,
+     Publicação sem quebra, linha .adp-obs opcional; ver .adv-obs/.adp-obs adiante). */
+  .modal .adp-grid{min-width:720px}
+  .modal .adp-hrow,.modal .adp-rmain{display:grid;grid-template-columns:46px minmax(140px,1.35fr) 100px minmax(128px,1.2fr) minmax(116px,1fr);gap:0 12px;padding:11px 16px;align-items:center}
+  .modal .adp-hrow{background:rgba(var(--raise-rgb),.04);border-bottom:1px solid var(--card-border);
+        font-family:Montserrat,sans-serif;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
+  .modal .adp-hrow .r{text-align:right}
+  .modal .adp-row{border-bottom:1px solid rgba(var(--raise-rgb),.06);font-family:'Space Grotesk',sans-serif;font-size:12.5px}
+  .modal .adp-row.odd{background:rgba(var(--raise-rgb),.02)}
+  .modal .adp-row:last-child{border-bottom:0}
+  .modal .adp-num{font-weight:700;color:var(--ng-mid)}
+  .modal .adp-nup{min-width:0;font-family:Montserrat,sans-serif}
+  .modal .adp-nup-p{display:block;font-family:'Space Grotesk',sans-serif;font-weight:700;color:var(--text-data);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .modal .adp-pub{font-weight:600;color:var(--text-data);white-space:nowrap}
+  .modal .adp-cell{display:flex;flex-direction:row-reverse;flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:4px 6px;min-width:0}
+  .modal .adp-v{font-weight:700;color:var(--amber-text);white-space:nowrap}
+  .modal .adp-pill{font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:700;line-height:1;padding:4px 7px;border-radius:999px;
+        background:rgba(var(--amber-rgb),.16);color:var(--amber-text);white-space:nowrap}
+  .modal .adp-acc{text-align:right;font-weight:700;color:var(--text-brightest)}
+  .modal .adp-foot{padding:14px 16px;display:flex;flex-direction:column;gap:9px}
+  .modal .adp-stack{height:12px;border-radius:6px;background:rgba(var(--amber-rgb),.22);overflow:hidden}
+  .modal .adp-stack i{display:block;height:100%;background:var(--ng)}
+  .modal .adp-leg{display:flex;align-items:center;flex-wrap:wrap;gap:16px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:600;color:var(--text-muted)}
+  .modal .adp-leg i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+  .modal .adp-leg i.d-o{background:var(--ng)}
+  .modal .adp-leg i.d-p{background:rgba(var(--amber-rgb),.75)}
+  .modal .adp-leg b{margin-left:auto;font-weight:700}
+  @media (max-width:560px){ .modal .adp-head{align-items:flex-start} .modal .adp-trio{gap:14px} }
+  /* ===== Etapa B / Bloco 6 — aba "Medições" (tabela mensal; modelo janela_contrato_melhorado) ===== */
+  .modal .med-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:2px 0 14px}
+  .modal .med-c{border:1px solid var(--card-border);border-radius:12px;padding:13px 14px;min-width:0} /* superfície: ver bloco Etapa 4/10 */
+  .modal .med-n{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:var(--text-brightest);line-height:1.15;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .modal .med-n.pos{color:var(--ng-light)}
+  .modal .med-s{font-family:Montserrat,sans-serif;font-size:10.5px;color:var(--text-dim);margin-top:3px}
+  .modal .med-hero{position:relative;border-color:rgba(var(--ng-rgb),.4);background:linear-gradient(160deg,rgba(var(--ng-rgb),.17),rgba(var(--ng-rgb),.06))}
+  .modal .med-hero::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(var(--ng),var(--ng-deep))}
+  .modal .med-hero .med-n{white-space:normal;font-size:14px} /* rótulo de período pode quebrar — não é moeda */
+  .modal .med-table{border:1px solid var(--card-border);border-radius:12px;background:var(--card-bg-2);overflow:hidden}
+  .modal .med-thead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;padding:13px 16px;border-bottom:1px solid var(--card-border)}
+  .modal .med-scroll{overflow-x:auto}
+  .modal .med-grid{min-width:760px}
+  .modal .med-hrow,.modal .med-row{display:grid;grid-template-columns:34px 44px minmax(0,1.05fr) minmax(0,1.05fr) minmax(92px,1fr) minmax(80px,.8fr) minmax(92px,1fr);gap:0 10px;padding:11px 16px;align-items:center}
+  .modal .med-hrow{background:rgba(var(--raise-rgb),.04);border-bottom:1px solid var(--card-border);
+        font-family:Montserrat,sans-serif;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
+  .modal .med-hrow .r{text-align:right}
+  .modal .med-row{border-bottom:1px solid rgba(var(--raise-rgb),.06);font-family:'Space Grotesk',sans-serif;font-size:12.5px;color:var(--text-data);font-weight:600}
+  .modal .med-row.odd{background:rgba(var(--raise-rgb),.02)}
+  .modal .med-nr{font-weight:700;color:var(--ng-mid)}
+  .modal .med-stm{display:inline-block;font-family:Montserrat,sans-serif;font-size:9px;font-weight:700;letter-spacing:.3px;
+        padding:3px 6px;border-radius:6px;background:rgba(var(--ng-rgb),.14);color:var(--ng-light)}
+  .modal .med-per,.modal .med-proto{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .modal .med-proto{color:var(--text-muted)}
+  .modal .med-val{text-align:right;white-space:nowrap}
+  .modal .med-glosa{color:var(--status-stop-text)}
+  .modal .med-tot{text-align:right;white-space:nowrap;font-weight:700;color:var(--text-brightest)}
+  .modal .med-foot{display:flex;flex-wrap:wrap;gap:14px 36px;padding:14px 16px;background:rgba(var(--raise-rgb),.05);border-top:1px solid var(--card-border)}
+  .modal .med-fn{font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;color:var(--text-brightest);margin-top:3px;white-space:nowrap}
+  .modal .med-fn.pos{color:var(--ng-light)}
+  .modal .med-leg{margin-top:14px;background:var(--card-bg-2);border:1px solid var(--card-border);border-radius:12px;padding:14px 16px}
+  .modal .med-leg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px 18px;margin-top:10px}
+  .modal .med-leg-i{display:flex;gap:8px;font-family:Montserrat,sans-serif;font-size:11.5px;color:var(--text-data)}
+  .modal .med-leg-i b{font-family:'Space Grotesk',sans-serif;color:var(--ng-light);flex:none;width:34px}
   .rev{margin-top:11px;font-size:11.5px;color:var(--text-body2);line-height:1.5}
   .rev b{color:var(--ng-light);font-family:'Space Grotesk',sans-serif}
   .empty{color:var(--text-dim);font-size:12.5px;padding:10px 0}
-  .foot{font-size:10.5px;color:var(--text-dimmer);margin-top:20px;line-height:1.55;border-top:1px solid rgba(var(--white-rgb),.08);padding-top:12px}
+  .foot{font-size:10.5px;color:var(--text-dimmer);margin-top:20px;line-height:1.55;border-top:1px solid rgba(var(--raise-rgb),.08);padding-top:12px}
   .foot b{color:var(--badge-text)}
   @media (max-width:860px){main{grid-template-columns:1fr;grid-template-rows:56vh 1fr}aside{border-left:0;border-top:1px solid rgba(var(--ng-rgb),.16)}.crumb{max-width:min(60%,calc(100% - 220px))}}
 
@@ -460,7 +1074,7 @@
   background:rgba(var(--bg-base-rgb),.92);backdrop-filter:blur(2px)}
 .data-error[hidden]{display:none}
 .data-error-box{max-width:420px;padding:28px 32px;border-radius:14px;background:var(--bg-header-2);
-  border:1px solid rgba(var(--white-rgb),.08);text-align:center;color:var(--text-bright)}
+  border:1px solid rgba(var(--raise-rgb),.08);text-align:center;color:var(--text-bright)}
 .data-error-box h2{margin:0 0 10px;font-size:17px;color:var(--text-brightest)}
 .data-error-box p{margin:0 0 18px;font-size:13.5px;line-height:1.5;color:var(--text-value)}
 .data-error-box button{border:1px solid var(--ng);background:transparent;color:var(--ng);

@@ -9,6 +9,31 @@
 <link rel="stylesheet" href="assets/css/mapa-obras.css">
 </head>
 <body>
+<script>
+/* Etapa A / Blocos 1 e 3 — tema claro/escuro.
+   Decidido aqui, antes de qualquer conteúdo pintar, para não "piscar".
+   Escolha manual do usuário (localStorage 'gecope_theme', a mesma chave usada no
+   restante do GECOPE) vence; na ausência dela, segue a configuração do sistema
+   operacional. A classe 'theme-dark' marca o tema escuro; a ausência dela marca
+   o claro. É aplicada TANTO na raiz do documento (<html>) QUANTO no <body>:
+   - <html> — para que o CSS (:root:not(.theme-dark)) e o JavaScript, que lê as
+     variáveis de cor via getComputedStyle(document.documentElement), enxerguem
+     a mesma paleta;
+   - <body> — para manter a convenção body.theme-dark compartilhada com o resto
+     do GECOPE. */
+(function(){
+  try{
+    var pref=localStorage.getItem('gecope_theme');
+    var dark = pref ? (pref!=='light')
+                    : !(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+    document.documentElement.classList.toggle('theme-dark', dark);
+    document.body.classList.toggle('theme-dark', dark);
+  }catch(e){
+    document.documentElement.classList.add('theme-dark');
+    document.body.classList.add('theme-dark');
+  }
+})();
+</script>
 <header class="top">
   <button class="btn-voltar" id="btnVoltar" onmouseenter="prefetchPagina('index.html')"
       onclick="window.location.href='index.html'" title="Sair do módulo de Contratos e voltar ao Painel Principal">
@@ -24,6 +49,12 @@
     </div>
   </div>
   <div class="top-meta">
+    <button class="btn-theme" id="btnTheme" type="button" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
+      <svg class="ic-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <svg class="ic-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
     <div class="synctime"><span class="l">Base atualizada em</span><span class="v" id="syncTime">—</span></div>
     <button class="btn-present btn-scope" id="btnScope" title="Alternar entre a carteira ativa (obras em andamento) e o histórico completo de contratos">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -51,20 +82,18 @@
     </button>
     <div class="ctrl" id="ctrl">
       <div class="ctrl-head"><span>Controles</span><button class="ctrl-close" id="ctrlClose" aria-label="Recolher">✕</button></div>
-      <div class="lbl">Dividir por</div>
-      <div class="seg" id="segMethod">
-        <button data-v="do" class="on">Distrito Op.</button>
-        <button data-v="reg">Região</button>
-      </div>
       <div class="lbl">Métrica (obra · valor)</div>
       <div class="seg" id="segMetric">
         <button data-v="obras" class="on">Obra</button>
         <button data-v="valor">Valor</button>
       </div>
       <div class="lbl">Buscar</div>
-      <input class="fsel" id="fSearch" type="search" placeholder="contrato, obra, empresa, município…" autocomplete="off">
-      <div class="lbl">Filtros</div>
-      <div id="filtersHost"></div>
+      <input class="fsel" id="fSearch" type="search" placeholder="descrição, município, fiscal, contratada, contratante, ano, status…" autocomplete="off">
+      <div class="lbl lbl-filtros">Filtros
+        <button type="button" class="filt-toggle" id="filtToggle" aria-expanded="false" aria-controls="filtersHost" aria-label="Mostrar todos os filtros" title="Mostrar todos os filtros">+</button>
+      </div>
+      <div id="filtersHost" hidden></div>
+      <div id="filterChips" aria-label="Filtros ativos"></div>
       <button class="clearf" id="clearF">Limpar busca e filtros</button>
     </div>
 
@@ -82,12 +111,18 @@
     <div class="aside-head"><span>Painel</span><button class="ctrl-close" id="asideClose" aria-label="Recolher">✕</button></div>
     <div class="live"><span class="d"></span><span id="connStatus">Carregando…</span></div>
     <div class="kpis">
-      <div class="kpi"><div class="k">Obras</div><div class="v" id="kObras">–</div></div>
-      <div class="kpi alert"><div class="k">Paralisadas</div><div class="v" id="kPar">–</div></div>
-      <div class="kpi wide"><div class="k">Valor total dos contratos</div><div class="v" id="kValor">–</div></div>
-      <div class="kpi wide"><div class="k">Valor médio por obra</div><div class="v" id="kMedio">–</div></div>
-      <div class="kpi"><div class="k">Municípios atendidos</div><div class="v" id="kMun">–</div></div>
-      <div class="kpi"><div class="k">Total em aditivos</div><div class="v" id="kAdit">–</div></div>
+      <div class="kpi k-obras"><div class="k">Obras</div><div class="v" id="kObras">–</div>
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M5 18v-1a7 7 0 0 1 14 0v1"/><path d="M10 6.5V4.5h4v2"/><path d="M8.5 7.2A6 6 0 0 1 12 6a6 6 0 0 1 3.5 1.2"/></svg></span></div>
+      <div class="kpi k-par"><div class="k">Paralisadas</div><div class="v" id="kPar">–</div>
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.4 20a1 1 0 0 0 .86 1.5h17.48a1 1 0 0 0 .86-1.5z"/><path d="M12 9.5v5"/><path d="M12 17.5h.01"/></svg></span></div>
+      <div class="kpi k-valor"><div class="k">Valor total dos contratos</div><div class="v" id="kValor">–</div>
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v10"/><path d="M14.5 9.2c-.6-.8-1.6-1.2-2.6-1.2-1.7 0-2.9.9-2.9 2.1 0 1.3 1.1 1.8 2.9 2.3 1.8.5 2.9 1 2.9 2.3 0 1.2-1.2 2.1-2.9 2.1-1 0-2-.4-2.6-1.2"/></svg></span></div>
+      <div class="kpi k-medio"><div class="k">Valor médio por obra</div><div class="v" id="kMedio">–</div>
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><rect x="8" y="6" width="8" height="3.2" rx="0.6"/><path d="M8.5 13h.01M12 13h.01M15.5 13h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01"/></svg></span></div>
+      <div class="kpi k-mun"><div class="k">Municípios atendidos</div><div class="v" id="kMun">–</div>
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l6-3v17"/><path d="M11 21V11l8-3v13"/><path d="M8 9h.01M8 12h.01M8 15h.01M15 12h.01M15 15h.01"/></svg></span></div>
+      <div class="kpi k-adit"><div class="k">Total em aditivos</div><div class="v" id="kAdit">–</div>
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6"/><path d="M9 15h6"/></svg></span></div>
     </div>
     <div class="statwrap">
       <div class="sec-h"><span>Situação das obras</span></div>
