@@ -94,10 +94,17 @@
     function calcularIndiceRevisao(rows, fiscalKey, gecopeKey) {
         const variacoes = [];
         let alterados = 0;
+        let relevantes = 0;
         let somaFiscalAlterados = 0, somaDiffAlterados = 0;
         rows.forEach(d => {
             const fiscalVal = d[fiscalKey] || 0;
             const gecopeVal = d[gecopeKey] || 0;
+            // Processo sem valor nenhum (fiscal e GECOPE) para a métrica selecionada
+            // (ex.: olhando "Acréscimo" um processo que só teve supressão) não é
+            // candidato a "revisão" desta métrica — não entra nem no numerador nem
+            // no denominador da taxa, senão dilui artificialmente o percentual.
+            if (fiscalVal === 0 && gecopeVal === 0) return;
+            relevantes++;
             const diff = gecopeVal - fiscalVal;
             if (Math.abs(diff) > 0.01) {
                 alterados++;
@@ -110,11 +117,11 @@
         const media = variacoes.length ? variacoes.reduce((a, b) => a + b, 0) / variacoes.length : 0;
         const mid = Math.floor(variacoes.length / 2);
         const mediana = variacoes.length ? (variacoes.length % 2 !== 0 ? variacoes[mid] : (variacoes[mid - 1] + variacoes[mid]) / 2) : 0;
-        const taxaRevisao = rows.length ? (alterados / rows.length) * 100 : 0;
+        const taxaRevisao = relevantes ? (alterados / relevantes) * 100 : 0;
         // Corte médio restrito aos processos que a GECOPE efetivamente alterou:
         // "quando a GECOPE age, corta em média X%".
         const corteMedioAlterados = somaFiscalAlterados !== 0 ? (somaDiffAlterados / Math.abs(somaFiscalAlterados)) * 100 : 0;
-        return { media, mediana, taxaRevisao, alterados, total: rows.length, corteMedioAlterados };
+        return { media, mediana, taxaRevisao, alterados, total: relevantes, corteMedioAlterados };
     }
 
     // Redução agregada: soma tudo primeiro, depois divide.
@@ -134,7 +141,13 @@
         return { reducaoAbs, reducaoPerc, somaFiscal, somaGecope };
     }
 
+    // Processos de "supressão pura concordada" (sem acréscimo, GECOPE concorda com a
+    // Fiscalização) são pass-through administrativo: não passam por análise aprofundada
+    // e por isso não entram nos indicadores de índice de revisão (view
+    // vw_processos_financeiro expõe analise_aprofundada). Os totais em R$ e gráficos
+    // continuam somando todos os processos — só os 4 KPIs de revisão usam este subconjunto.
     function renderKPIsFinanceiro(rows) {
+        const rowsAnalisadas = rows.filter(d => d.analiseAprofundada);
         const t = calcularTotaisFinanceiro(rows);
         const diffReperc = t.repercGecope - t.repercFiscal; const diffAcresc = t.acrescGecope - t.acrescFiscal; const diffSupress = t.supressGecope - t.supressFiscal;
         let diffAbs = 0; const metric = fin.diffMetric.value;
@@ -142,7 +155,7 @@
         if (metric === "reperc") { diffAbs = diffReperc; fiscalKey = "repercFiscal"; gecopeKey = "repercGecope"; }
         else if (metric === "acresc") { diffAbs = diffAcresc; fiscalKey = "acrescFiscal"; gecopeKey = "acrescGecope"; }
         else if (metric === "supress") { diffAbs = diffSupress; fiscalKey = "supressFiscal"; gecopeKey = "supressGecope"; }
-        const indice = calcularIndiceRevisao(rows, fiscalKey, gecopeKey);
+        const indice = calcularIndiceRevisao(rowsAnalisadas, fiscalKey, gecopeKey);
         const reducao = calcularReducaoAgregada(rows, fiscalKey, gecopeKey);
         document.getElementById("kpi-acresc-fiscal").textContent = window.formatCompact ? window.formatCompact(t.acrescFiscal) : String(t.acrescFiscal);
         document.getElementById("kpi-supress-fiscal").textContent = window.formatCompact ? window.formatCompact(t.supressFiscal) : String(t.supressFiscal);
@@ -153,7 +166,16 @@
         document.getElementById("kpi-diff-abs").textContent = window.formatCompact ? window.formatCompact(diffAbs) : String(diffAbs);
         document.getElementById("kpi-diff-perc").textContent = window.formatPercentage ? window.formatPercentage(indice.media) : String(indice.media);
         const medianaEl = document.getElementById("kpi-diff-mediana");
-        if (medianaEl) medianaEl.textContent = "Mediana: " + (window.formatPercentage ? window.formatPercentage(indice.mediana) : String(indice.mediana));
+        if (medianaEl) {
+            medianaEl.textContent = "Mediana: " + (window.formatPercentage ? window.formatPercentage(indice.mediana) : String(indice.mediana));
+            // Mediana 0% é um resultado válido (não um erro): significa que na metade
+            // ou mais dos processos analisados a fundo a GECOPE confirmou o valor da
+            // Fiscalização sem alteração. Sem essa explicação, 0% ao lado de uma média
+            // maior que zero passa a impressão de dado quebrado numa apresentação.
+            medianaEl.title = indice.mediana === 0 && indice.total > 0
+                ? "0% é um resultado válido: significa que a GECOPE confirmou, sem alterar, o valor de pelo menos metade dos processos analisados a fundo."
+                : "";
+        }
         const taxaEl = document.getElementById("kpi-taxa-revisao");
         if (taxaEl) taxaEl.textContent = window.formatPercentage ? window.formatPercentage(indice.taxaRevisao) : String(indice.taxaRevisao);
         const taxaSubEl = document.getElementById("kpi-taxa-revisao-sub");
@@ -169,6 +191,20 @@
         if (reducaoPercEl) reducaoPercEl.textContent = window.formatPercentage ? window.formatPercentage(reducao.reducaoPerc) : String(reducao.reducaoPerc);
         const reducaoAbsEl = document.getElementById("kpi-reducao-abs");
         if (reducaoAbsEl) reducaoAbsEl.textContent = window.formatCompact ? window.formatCompact(reducao.reducaoAbs) : String(reducao.reducaoAbs);
+
+        renderNotaAnaliseAprofundada(rows, rowsAnalisadas);
+    }
+
+    // Nota discreta no rodapé do painel explicando por que os indicadores de revisão
+    // (mas não os totais em R$) excluem processos de supressão pura concordada.
+    function renderNotaAnaliseAprofundada(rows, rowsAnalisadas) {
+        const el = document.getElementById("fin-nota-analise-aprofundada");
+        if (!el) return;
+        if (rows.length === 0) { el.innerHTML = ""; return; }
+        const excluidos = rows.length - rowsAnalisadas.length;
+        // Números aqui são sempre inteiros calculados internamente (nunca texto vindo
+        // do usuário/banco), por isso é seguro montar via innerHTML.
+        el.innerHTML = `<i class="bi bi-info-circle"></i><span>Indicadores de revisão (Taxa de Revisão, Variação Média, Mediana e Corte Médio) baseados em <strong>${rowsAnalisadas.length} de ${rows.length}</strong> processos — <strong>${excluidos}</strong> de supressão pura concordada com a Fiscalização não passam por análise aprofundada e não entram nesse cálculo. Totais em R$ e gráficos consideram todos os ${rows.length} processos.</span>`;
     }
 
     function renderContadorFinanceiro(rows) {
@@ -324,10 +360,11 @@
             // fazem sentido quando há de fato uma diferença a indicar (pedido do usuário,
             // 2026-08-14).
             const diffPercIcon = d._diffPerc === 0 ? "" : (d._diffPerc < 0 ? "bi-arrow-down-short" : "bi-arrow-up-short");
+            const supressaoPuraInfo = d.analiseAprofundada ? "" : ` <i class="bi bi-info-circle fin-supressao-info" title="Supressão pura concordada com a Fiscalização — não passa por análise aprofundada, excluído dos indicadores de revisão"></i>`;
             return `
             <tr>
-                <td>${esc(d.processo)}</td>
-                <td><span class="badge ${statusCls}">${esc(statusTxt)}</span></td>
+                <td class="fin-td-processo">${esc(d.processo)}</td>
+                <td><span class="badge ${statusCls}">${esc(statusTxt)}</span>${supressaoPuraInfo}</td>
                 <td>${esc(d.fiscal)}</td>
                 <td>${esc(d.nomeAnalista)}</td>
                 <td>${esc(d.contratada)}</td>

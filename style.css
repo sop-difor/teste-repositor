@@ -2309,11 +2309,81 @@
             font-size: 0.8rem;
         }
 
+        #pane-financeiro .fin-td-processo {
+            white-space: nowrap;
+        }
+
         .fin-diff-pill {
             display: inline-flex;
             align-items: center;
             gap: 2px;
             font-weight: 700;
+        }
+
+        .fin-info-icon {
+            color: rgba(1, 138, 189, 0.55);
+            font-size: .78rem;
+            margin-left: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            line-height: 1;
+        }
+
+        .fin-info-icon:hover {
+            color: var(--sop-blue);
+        }
+
+        body.theme-dark .fin-info-icon {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        body.theme-dark .fin-info-icon:hover {
+            color: #6ea8fe;
+        }
+
+        .fin-supressao-info {
+            margin-left: 5px;
+            font-size: 0.82rem;
+            color: rgba(100, 116, 139, 0.65);
+            cursor: help;
+            vertical-align: middle;
+        }
+
+        .fin-supressao-info:hover {
+            color: var(--sop-slate-700, #334155);
+        }
+
+        body.theme-dark .fin-supressao-info {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        body.theme-dark .fin-supressao-info:hover {
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        #fin-nota-analise-aprofundada:not(:empty) {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 0.74rem;
+            line-height: 1.5;
+            color: var(--sop-gray-mid);
+            margin-top: 12px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: rgba(1, 138, 189, 0.05);
+            border-left: 3px solid rgba(1, 138, 189, 0.35);
+        }
+
+        #fin-nota-analise-aprofundada i {
+            color: var(--sop-blue);
+            opacity: .7;
+            margin-top: 1px;
+        }
+
+        body.theme-dark #fin-nota-analise-aprofundada:not(:empty) {
+            background: rgba(255, 255, 255, 0.04);
+            border-left-color: rgba(110, 168, 254, 0.4);
         }
 
         .table {

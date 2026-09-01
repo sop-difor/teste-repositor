@@ -941,6 +941,7 @@ function mapProcessoRow(r) {
         acrescGecope: Number(r.acresc_gecope) || 0,
         supressGecope: Number(r.supress_gecope) || 0,
         repercGecope: Number(r.reperc_gecope) || 0,
+        analiseAprofundada: r.analise_aprofundada !== undefined ? !!r.analise_aprofundada : true,
         prioritario: r.prioritario || false,
         avisoAtrasoEnviado: r.aviso_atraso_enviado || false,
         suite: r.suite || null,
