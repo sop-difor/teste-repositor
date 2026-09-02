@@ -1,0 +1,14 @@
+{
+  "name": "reestruturacao-tabelas",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scripts da reestruturação das tabelas SEINFRA/SINAPI/ORSE (ver ../../tabelas.md)",
+  "scripts": {
+    "backup": "node E0_backup.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1",
+    "pg-copy-streams": "^6.0.6"
+  }
+}

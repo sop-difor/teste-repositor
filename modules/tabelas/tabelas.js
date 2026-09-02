@@ -26,7 +26,10 @@ async function executarBuscaTabela() {
     tbody.innerHTML = '<tr><td colspan="6" class="text-center py-5"><div class="spinner-border text-success"></div><div class="mt-2 text-muted small">Buscando na base de dados...</div></td></tr>';
 
     try {
-        let query = sbClient.from(nomeTabela).select('*');
+        // Lista explícita de colunas: a busca não usa a composição (só o modal de
+        // detalhe usa). Pedir 'composicao' aqui forçaria a fachada a montar o JSON
+        // analítico para cada linha do resultado — lento. Ver gecope/tabelas.md.
+        let query = sbClient.from(nomeTabela).select('id,identificacao,codigo,descricao,unidade,preco_unitario,tipo_encargo,referencia,created_at');
         if (fonte === 'SEINFRA') query = query.eq('referencia', versaoBase);
         else query = query.eq('referencia', dataFormatada);
 
@@ -665,20 +668,17 @@ async function atualizarSelectVersao() {
 
     try {
         if (fonte === 'SEINFRA') {
-            // Verifica versões recentes da SEINFRA (Tabelas de referência do Ceará)
-            const candidates = ["30", "29", "28", "27", "26"];
-            const checks = await Promise.all(candidates.map(async v => {
-                // Verifica se existe dados para esta referência
-                const { count } = await sbClient.from('seinfra_itens').select('*', { count: 'exact', head: true }).eq('referencia', v);
-                return { v, count: count || 0 };
-            }));
+            // Lê as referências carregadas direto de `referencia_carregada` (rápido),
+            // em vez de sondar a view item a item.
+            const { data } = await sbClient.from('referencia_carregada')
+                .select('referencia_label').eq('fonte', 'SEINFRA')
+                .order('referencia_ord', { ascending: false });
 
             selectVersao.innerHTML = '';
-            const valids = checks.filter(r => r.count > 0);
+            const valids = (data || []).map(r => r.referencia_label);
             if (valids.length > 0) {
-                valids.forEach(r => selectVersao.add(new Option(`Tabela 0${r.v}`, r.v)));
+                valids.forEach(v => selectVersao.add(new Option(`Tabela 0${v}`, v)));
             } else {
-                // Fallback estático
                 ["28", "27"].forEach(t => selectVersao.add(new Option(`Tabela 0${t}`, t)));
             }
             selectRef.disabled = false;

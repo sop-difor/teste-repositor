@@ -993,30 +993,19 @@ window.adicionarItemOutrasManual = function () {
 // tabela antiga recém-carregada pelo administrador (ex.: ORSE de Jan/2025 com o
 // sistema já em Ago/2026) nunca aparecia no seletor de versão.
 async function obterMesesDisponiveis(tabela) {
-    const [{ data: antigo }, { data: recente }] = await Promise.all([
-        sbClient.from(tabela).select('referencia').not('referencia', 'is', null).order('referencia', { ascending: true }).limit(1),
-        sbClient.from(tabela).select('referencia').not('referencia', 'is', null).order('referencia', { ascending: false }).limit(1)
-    ]);
-    if (!antigo?.length || !recente?.length) return [];
-
-    const [anoIni, mesIni] = antigo[0].referencia.split('-').map(Number);
-    const [anoFim, mesFim] = recente[0].referencia.split('-').map(Number);
-    const tmIni = anoIni * 12 + mesIni;
-    const tmFim = anoFim * 12 + mesFim;
-
-    const candidatos = [];
-    for (let tm = tmFim; tm >= tmIni; tm--) {
-        const ano = Math.floor((tm - 1) / 12);
-        const mes = tm - ano * 12; // 1..12
-        candidatos.push({ ano, mes, dbDate: `${ano}-${String(mes).padStart(2, '0')}-01` });
-    }
-
-    const checks = await Promise.all(candidatos.map(async c => {
-        const { count } = await sbClient.from(tabela).select('*', { count: 'exact', head: true }).eq('referencia', c.dbDate);
-        return { ...c, count: count || 0 };
-    }));
-
-    return checks.filter(c => c.count > 0);
+    // Lê direto a lista de referências carregadas (tabela `referencia_carregada`,
+    // ~30 linhas) em vez de varrer a view inteira de itens. Muito mais rápido.
+    const fonte = tabela === 'sinapi_itens' ? 'SINAPI' : (tabela === 'orse_itens' ? 'ORSE' : 'SEINFRA');
+    const { data, error } = await sbClient
+        .from('referencia_carregada')
+        .select('referencia_label')
+        .eq('fonte', fonte)
+        .order('referencia_ord', { ascending: false });
+    if (error || !data?.length) return [];
+    return data.map(r => {
+        const [ano, mes] = String(r.referencia_label).split('-').map(Number);
+        return { ano, mes, dbDate: r.referencia_label, count: 1 };
+    });
 }
 
 async function atualizarVersoesBusca() {
@@ -1048,12 +1037,10 @@ async function atualizarVersoesBusca() {
         const mapMesLabels = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 
         if (fonte === 'SEINFRA') {
-            const candidates = ["30", "29", "28", "27", "26"];
-            const results = await Promise.all(candidates.map(async v => {
-                const { count } = await sbClient.from('seinfra_itens').select('*', { count: 'exact', head: true }).eq('referencia', v);
-                return { v, count: count || 0 };
-            }));
-            options = results.filter(r => r.count > 0).map(r => r.v);
+            const { data } = await sbClient.from('referencia_carregada')
+                .select('referencia_label').eq('fonte', 'SEINFRA')
+                .order('referencia_ord', { ascending: false });
+            options = (data || []).map(r => r.referencia_label);
             if (options.length === 0) options = ['28', '27'];
         }
         else if (fonte === 'SINAPI' || fonte === 'ORSE') {
@@ -1097,9 +1084,12 @@ async function executarBuscaItemComposicao() {
     else if (fonte === 'SINAPI') tabela = 'sinapi_itens';
     else if (fonte === 'ORSE') tabela = 'orse_itens';
 
+    // Colunas explícitas: a busca de item não lê a composição analítica (só campos
+    // planos). Evita a fachada montar o JSON da composição por linha. Ver tabelas.md.
+    const colsBusca = 'id,identificacao,codigo,descricao,unidade,preco_unitario,tipo_encargo,referencia,created_at';
     let query = sbClient
         .from(tabela)
-        .select('*')
+        .select(colsBusca)
         .or(`codigo.ilike.%${termo}%,descricao.ilike.%${termo}%`);
 
     // Helper: Convert "DEZ/2025" -> "2025-12-01"
@@ -1141,7 +1131,7 @@ async function executarBuscaItemComposicao() {
         // Try simple search without filters
         const { data: diagData, error: diagError } = await sbClient
             .from(tabela)
-            .select('*')
+            .select(colsBusca)
             .or(`codigo.ilike.%${termo}%,descricao.ilike.%${termo}%`)
             .limit(10); // Show more results to increase chance of finding the right one
 

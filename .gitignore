@@ -26,3 +26,7 @@ comissao_fiscalizacao.csv
 ficha_contrato.csv
 aditivos_contrato.csv
 medicoes.csv
+
+# Reestruturação das tabelas SEINFRA/SINAPI/ORSE (ver tabelas.md)
+sql/reestruturacao_tabelas/backup/
+sql/reestruturacao_tabelas/node_modules/
