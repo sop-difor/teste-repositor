@@ -9,7 +9,7 @@ raciocínio + sondagens de leitura via Supabase MCP.
 | Lente | Rodada 1 | Rodada 2 |
 |---|---|---|
 | `rev-seguranca` | **BLOQUEADO** (bypass da guarda de schema) | _(re-submissão — commits `d0ae360` + `c0d37cd`)_ |
-| `rev-correcao` | **APROVADO** (0 bloqueantes) | _(re-submissão — buraco G, commit `c0d37cd`)_ |
+| `rev-correcao` | **APROVADO** (0 bloqueantes) | **APROVADO** — buraco G verificado (simulou as policies em prod com rollback: `processos` 0→427, views resolvem). Follow-ups cosméticos (3b `SET ROLE`, célula 6) corrigidos. |
 | `rev-produto` | **APROVADO** | — |
 | `rev-aderencia` | **APROVADO** | — |
 

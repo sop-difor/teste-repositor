@@ -139,7 +139,7 @@ usuário preferir mover.
 | 5c | `executar_consulta_ia('select 1 from net/**/._http_response')` (comentário) | ERRO "schema fora de public" |
 | 5d | `executar_consulta_ia('select 1 from pg_roles')` (catálogo não-qualificado) | ERRO "catálogo do sistema" |
 | 5e | `executar_consulta_ia($$select current_setting('is_superuser')$$)` | ERRO "Função não permitida" |
-| 6 | `executar_consulta_ia('select count(*) from contratos_edificacao')` | retorna número |
+| 6 | `executar_consulta_ia('select count(*) from contratos_edificacao')` | retorna ~352 — **não 0** (buraco G) |
 | 6b | `executar_consulta_ia` com join contrato+ficha (consulta legítima do assistente) | retorna linhas |
 | 7 | `POST` na Edge Function com `Authorization: Bearer <anon key>` | `401`, `origem: "sessao"` |
 | 8 | `POST` com `Bearer <access_token de usuário>` | responde normalmente; `consultas_ia_log.usuario` = e-mail |

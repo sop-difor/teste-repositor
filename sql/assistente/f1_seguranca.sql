@@ -202,10 +202,12 @@ commit;
 --   from contratos_edificacao c join ficha_contrato f on f.id_contrato = c.id_contrato limit 5$$);
 -- select * from executar_consulta_ia($$select count(*) from vw_processos_financeiro$$);  -- ~318, NÃO 0
 --
--- 3b) buraco G — a role lê a lista branca (rodar como a role):
--- set local role gecope_ia_readonly;
---   select count(*) from public.processos;             -- ~427
---   select count(*) from public.medicoes;              -- ~2944
+-- 3b) buraco G — a role lê a lista branca (usar SET ROLE, não SET LOCAL —
+--     SET LOCAL fora de transação é ignorado e roda como postgres/BYPASSRLS):
+-- set role gecope_ia_readonly;
+--   select count(*) from public.processos;             -- ~427 (NÃO 0)
+--   select count(*) from public.medicoes;              -- ~2944 (NÃO 0)
+--   select count(*) from public.vw_processos_financeiro; -- ~318 (NÃO 0)
 -- reset role;
 --
 -- 4) LGPD:
