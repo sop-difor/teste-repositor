@@ -1,0 +1,89 @@
+# Assistente de Dados do GECOPE — iniciativa de aperfeiçoamento
+
+O **Assistente de Dados** deixa o usuário perguntar, em linguagem natural, sobre os dados
+do GECOPE (contratos de edificação, processos de replanilhamento, aditivos, medições) e
+responde de forma estruturada. Já existe um protótipo funcional; esta iniciativa o leva a
+um estado utilizável por um piloto interno.
+
+## Contrato com o usuário (fronteira explícita)
+
+- **Motor de intenções** (regras escritas à mão, SQL fixo e parametrizado) cobre as
+  perguntas mais comuns — rápido, sem custo, determinístico, testável. É o terreno firme.
+- **Caminho LLM** atende o resto, **restrito a um conjunto curado de views**, sempre
+  mostrando o SQL gerado e marcando a resposta como "gerada — confira". Tem **direito a
+  falhar**: quando não consegue, degrada para "não consegui responder; tente uma destas
+  perguntas", nunca um erro cru nem um número inventado.
+- O LLM **nunca recebe linhas do banco** — apenas o dicionário de schema e a pergunta. O
+  SQL é executado localmente por uma função só-leitura e o resultado é formatado sem
+  segunda chamada de IA. Ver [`provedor-llm.md`](provedor-llm.md).
+
+## Público do piloto
+
+Equipe GECOPE + gestores de contrato (~10–20 pessoas que vivem nesses dados e percebem
+uma resposta errada na hora). Não é liberação geral.
+
+## Escopo de dados
+
+Congelado para o v1 — ver [`escopo-dados.md`](escopo-dados.md). Ampliar é decisão de v2,
+guiada pelo que os usuários realmente perguntarem.
+
+## Processo — 9 fases, cada uma com veredito dos 4 revisores
+
+Cada fase só libera a seguinte após os **4 revisores** (ver [`revisores.md`](revisores.md))
+devolverem `APROVADO`. `BLOQUEADO` volta para correção na mesma fase. Duas rodadas de
+`BLOQUEADO` na mesma fase escalam para o usuário decidir.
+
+| # | Fase | Entrega | Sign-off do usuário |
+|---|---|---|---|
+| **F0** | Fundação | Código movido para `gecope/`, branch, escopo congelado, provedor/modelo decidido | — |
+| **F1** | Blindagem de segurança | JWT real; `usuario` do JWT; `REVOKE EXECUTE … FROM anon, authenticated`; rate limit; revisão de grants; LGPD no log | **sim** |
+| **F2** | Núcleo determinístico | Corrigir bug do `limit`; retry/backoff; fallback de modelo; sanitização; testes | — |
+| **F3** | Harness de avaliação | 40–60 perguntas com gabarito à mão + script + metas | — |
+| **F4** | Views largas para Q&A | 1–2 views desnormalizadas (contrato+obra+ficha+fiscal+distrito) | — |
+| **F5** | Expandir motor de intenções | De 19 para ~40–60 perguntas, guiado pelo log | — |
+| **F6** | LLM + prompt | `gerarSql()` isolado; prompt com as views largas; exibir SQL; marcar confiança; degradar para sugestões | — |
+| **F7** | Feedback + observabilidade | 👍/👎 + campo veredito no log; painel de uso/falhas; rotina "falha → intenção ou caso de eval" | — |
+| **F8** | Integração + piloto | `assistente.html` atrás da auth do GECOPE; liberar para o piloto | **sim** |
+
+## Estado atual
+
+| Fase | Situação |
+|---|---|
+| F0 | **em revisão** |
+| F1–F8 | não iniciadas |
+
+## Diagnóstico que motivou a iniciativa (03/09/2026)
+
+Primeiro dia de teste real: 1 usuário, 25 perguntas, 14 falhas.
+
+- Motor de intenções: **10/10 corretas**. É a parte sólida.
+- Caminho LLM: praticamente inoperante, por 3 causas independentes:
+  1. Modelo `gemini-2.5-flash` **descontinuado** (HTTP 404) — o código já foi alterado
+     para outro ID, mas sem cadeia de fallback nem verificação.
+  2. Free tier **sobrecarregada** (HTTP 503, "model is currently experiencing high
+     demand").
+  3. **Bug local**: `executar_consulta_ia` concatena `' limit 200'` na string do SQL
+     gerado; quando o SQL do modelo tem `;` final, comentário `--` ou quebra de linha, o
+     resultado é `syntax error at or near "limit"` / `at or near ";"`. Causa dominante
+     das falhas de execução.
+- Segurança: `executar_consulta_ia` tem `EXECUTE` para `anon` e `authenticated` —
+  qualquer pessoa com a anon key pública (está em `config.js`) roda `SELECT` arbitrário
+  nas 13 tabelas via `/rest/v1/rpc/`, sem passar pela Edge Function. `usuario` vem do
+  corpo da requisição (falsificável). A página não está integrada nem autenticada.
+
+## Arquivos
+
+| Caminho | O quê |
+|---|---|
+| `assistente.html` | Front-end do assistente (raiz do GECOPE) |
+| `supabase/functions/gecope-assistant/index.ts` | Edge Function — orquestra intenções + LLM + log |
+| `supabase/functions/gecope-assistant/motor_intencoes.ts` | Motor de intenções (regras) |
+| `supabase/functions/gecope-assistant/schema_prompt.ts` | Dicionário condensado de schema, injetado no prompt do LLM |
+| `docs/assistente/schema_dicionario.md` | Dicionário completo de schema (documentação legível) |
+| `docs/assistente/*` | Planos, escopo, config de revisores, vereditos por fase |
+
+Infra no Supabase (projeto `qexdnxqmiaarzwwwrcor` — produção):
+- Role `gecope_ia_readonly` — `SELECT` em 13 objetos do domínio, sem `LOGIN`.
+- Função `executar_consulta_ia(text)` — `SECURITY DEFINER` como `gecope_ia_readonly`,
+  valida só-`SELECT`, instrução única, injeta `LIMIT`.
+- Tabela `consultas_ia_log` — registro de toda pergunta (origem, sucesso, erro, linhas).
