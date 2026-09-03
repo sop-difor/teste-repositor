@@ -9,7 +9,7 @@ raciocínio + sondagens de leitura via Supabase MCP.
 | Lente | R1 | R2 | R3 |
 |---|---|---|---|
 | `rev-seguranca` | **BLOQUEADO** (bypass: aspas/comentário) | **BLOQUEADO** (normalização não é sã: comentário aninhado, `--` em literal) | _(re-submissão — commit da rejeição de comentário/aspas)_ |
-| `rev-correcao` | **APROVADO** | **APROVADO** — buraco G verificado (simulou as policies em prod com rollback: `processos` 0→427). Follow-ups cosméticos corrigidos. | — |
+| `rev-correcao` | **APROVADO** | **APROVADO** — buraco G verificado em prod com rollback | **APROVADO** — 25 consultas legítimas contra a rejeição de comentário/aspas, 0 recusadas (salvo alias entre aspas, ver FU-52); bypasses barrados; função compila sem `declare` |
 | `rev-produto` | **APROVADO** | — | — |
 | `rev-aderencia` | **APROVADO** | — | — |
 
@@ -114,6 +114,8 @@ doc reforçadas para exigir contagem real (> 0).
 | FU-45 | `^select` rejeita CTE (`WITH ... SELECT`) | **F2** — quando a camada de validação for retrabalhada |
 | FU-46 | Log grava `pergunta=""`, `origem:"gemini"` quando `req.json()` falha (ruído) | **F2** — cosmético |
 | FU-47 | Rate limit TOCTOU + fail-open; item 6 do "Como verificar" passava com 0 (checagem fraca) | Registrado (piloto); "Como verificar" reforçado para exigir contagem > 0 |
+| FU-52 (R3) | Alias entre aspas (`as "Total de Contratos"`) é recusado pela guarda `~ '"'` | Mitigado por `schema_prompt.ts` (proíbe aspas) + falha fechada. **Monitorar** os logs do piloto por rejeições "Comentário SQL ou identificador entre aspas"; se o modelo insistir em aliases amigáveis, liberar só o `"` (manter `--`/`/*`/`*/`) |
+| FU-53 (R3) | Bloco de verificação inline do `.sql` desalinhado da tabela de `fase-1-seguranca.md` | **Feito**: mensagens e casos (aninhado, `--` em literal) alinhados |
 
 ### rev-aderencia
 

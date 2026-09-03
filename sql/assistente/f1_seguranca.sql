@@ -192,12 +192,14 @@ commit;
 --   has_function_privilege('service_role',  'public.executar_consulta_ia(text)','execute') as service_role;  -- true
 --
 -- 2) blocklist e guardas (todas devem ERRAR):
--- select * from executar_consulta_ia($$select 1 from net._http_response$$);
--- select * from executar_consulta_ia($$select 1 from "net"."_http_response"$$);
--- select * from executar_consulta_ia($$select 1 from net/**/._http_response$$);
--- select * from executar_consulta_ia($$select 1 from pg_roles$$);
--- select * from executar_consulta_ia($$select current_setting('is_superuser')$$);
--- select * from executar_consulta_ia($$select 1; drop table x$$);
+-- select * from executar_consulta_ia($$select 1 from net._http_response$$);                  -- "schema fora de public"
+-- select * from executar_consulta_ia($$select 1 from "net"."_http_response"$$);              -- "Comentário SQL ou identificador entre aspas"
+-- select * from executar_consulta_ia($$select 1 from net/**/._http_response$$);              -- idem (contém /* */)
+-- select * from executar_consulta_ia($$select 1 from net/*/**/*/._http_response$$);          -- idem (comentário aninhado)
+-- select * from executar_consulta_ia($$select 1 where 'x'='--' union select 1 from net._http_response$$); -- idem (-- em literal)
+-- select * from executar_consulta_ia($$select 1 from pg_roles$$);                            -- "catálogo do sistema"
+-- select * from executar_consulta_ia($$select current_setting('is_superuser')$$);            -- "Função não permitida"
+-- select * from executar_consulta_ia($$select 1; drop table x$$);                            -- "mais de uma instrução" / "Comando não permitido"
 --
 -- 3) consulta legítima (deve RETORNAR o número real, > 0):
 -- select * from executar_consulta_ia($$select count(*) from contratos_edificacao$$);  -- ~352, NÃO 0
