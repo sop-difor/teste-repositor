@@ -93,6 +93,11 @@ Opções para o usuário: (a) aceitar a allowlist como contenção + abrir o cha
 em paralelo, seguir para F2; (b) travar a F1 até o chamado Supabase concluir; (c) pedir
 mais uma rodada do `rev-seguranca` sobre a allowlist antes de decidir.
 
+**Decisão do usuário (03/09/2026): (a)** — allowlist aceita como contenção; chamado ao
+suporte Supabase aberto em paralelo (não bloqueante). E **(i)** para o buraco G: o piloto
+(equipe GECOPE + gestores) aceita `USING (true)`; filtro por identidade fica para a F5.
+Uma rodada R4 do `rev-seguranca` roda mesmo assim, como conferência (não trava).
+
 ## Buraco G (rev-correcao, follow-up promovido a item de fase) — CORRIGIDO
 
 `executar_consulta_ia` roda como `gecope_ia_readonly`. As 9 tabelas do escopo têm RLS com
