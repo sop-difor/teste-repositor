@@ -24,14 +24,25 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { tentarIntencao, type DadosGrafico } from "./motor_intencoes.ts";
 import { SCHEMA_PROMPT } from "./schema_prompt.ts";
+import {
+  validarSqlGeminiOuFalhar,
+  interpretarRespostaModelo,
+  type RespostaModelo,
+} from "./guards.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*", // restrinja ao domínio do GECOPE em produção
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const GEMINI_MODEL = "gemini-3.6-flash"; // recomendado diretamente pela API do Gemini em set/2026 (gemini-2.5-flash foi descontinuado); se parar de funcionar no futuro, veja https://ai.google.dev/gemini-api/docs/models
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+// F2: cadeia de fallback de modelo. Tenta em ordem; 404/400 (modelo removido) ->
+// próximo imediatamente; 503 (sobrecarga) -> backoff 2x -> próximo. Todos
+// falharam -> caminho de degradação (o LLM tem "direito a falhar", ver
+// docs/assistente/provedor-llm.md). IDs conferidos em ai.google.dev/gemini-api/docs/models
+// em set/2026 — todos "stable" da free tier. Ao atualizar, conferir a lista lá.
+const GEMINI_MODELOS = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"];
+const geminiEndpoint = (modelo: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`;
 
 // ---------------------------------------------------------------------------
 // Converte qualquer valor em texto de forma segura — evita o clássico bug de
@@ -49,139 +60,71 @@ function paraTextoSeguro(valor: unknown): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Validação da consulta gerada pelo Gemini — camada extra, além da que já
-// existe dentro da função executar_consulta_ia no Postgres (defesa em
-// profundidade). Rejeita de saída comentário/aspas; ALLOWLIST de funções.
-// ---------------------------------------------------------------------------
-
-// Nomes que podem aparecer como `nome(` — funções analíticas seguras + palavras
-// -chave SQL que precedem parêntese. Espelha funcoes_ok da função SQL.
-const FUNCOES_OK = new Set([
-  "select","from","where","and","or","not","in","exists","on","over","filter",
-  "values","case","when","by","all","any","some","using","as","into","distinct",
-  "order","group","having","limit","offset","union","intersect","except","join",
-  "cross","inner","left","right","full","outer","natural","lateral","within",
-  "returning","partition","rows","range","between","ilike","like","similar",
-  "count","sum","avg","min","max","stddev","stddev_pop","stddev_samp","variance",
-  "var_pop","var_samp","corr","mode","percentile_cont","percentile_disc",
-  "row_number","rank","dense_rank","percent_rank","cume_dist","ntile","lag","lead",
-  "first_value","last_value","nth_value","bool_and","bool_or","every",
-  "string_agg","array_agg","json_agg","jsonb_agg",
-  "round","trunc","ceil","ceiling","floor","abs","sign","mod","power","sqrt","div",
-  "greatest","least",
-  "lower","upper","initcap","trim","btrim","ltrim","rtrim","length","char_length",
-  "character_length","octet_length","substr","substring","lpad","rpad","position",
-  "strpos","replace","translate","concat","concat_ws","format","split_part","starts_with",
-  "reverse","repeat","overlay","md5","encode","decode","chr","ascii","left","right",
-  "string_to_array","array_to_string","array_length","cardinality","unnest",
-  "regexp_replace","regexp_match","regexp_matches","regexp_count","regexp_split_to_array",
-  "to_char","to_date","to_number","to_timestamp","date_trunc","date_part","date_bin",
-  "extract","age","now","current_date","current_time","current_timestamp","localtime",
-  "localtimestamp","make_date","make_timestamp","make_interval","justify_days",
-  "justify_hours","justify_interval",
-  "date","time","timestamp","interval","numeric","int","int4","int8","bigint","integer",
-  "text","varchar","bool","boolean","real","float","double",
-  "exp","ln","log","width_bucket",
-  "to_json","to_jsonb","json_build_object","jsonb_build_object","row_to_json",
-  "json_object_agg","jsonb_object_agg",
-  "cast","coalesce","nullif","nvl",
-]);
-
-function validarSqlGeminiOuFalhar(sql: string): void {
-  const s = sql.trim();
-
-  if (/\/\*|\*\/|--|"/.test(s)) {
-    throw new Error("Consulta gerada usa comentário ou aspas — bloqueada.");
-  }
-  if (!/^\s*select\s/i.test(s)) {
-    throw new Error("Consulta gerada não começa com SELECT — bloqueada.");
-  }
-  if (/\b(insert|update|delete|drop|alter|truncate|grant|revoke|create)\b/i.test(s)) {
-    throw new Error("Comando não permitido detectado na consulta gerada — bloqueada.");
-  }
-  if (/;\s*\S/.test(s)) {
-    throw new Error("Mais de uma instrução detectada — bloqueada.");
-  }
-  // F1: nenhuma referência a schema fora de 'public'.
-  if (/\b(net|cron|extensions|auth|storage|vault|graphql|graphql_public|realtime|pgsodium|pgbouncer|pg_temp|pg_toast|information_schema|supabase_migrations|supabase_functions|_analytics|_realtime)\s*\./i.test(s)) {
-    throw new Error("Consulta gerada referencia schema fora de public — bloqueada.");
-  }
-  // F1: nenhum identificador de catálogo do sistema, qualificado ou não.
-  if (/\bpg_[a-z0-9_]+/i.test(s)) {
-    throw new Error("Consulta gerada referencia catálogo do sistema — bloqueada.");
-  }
-  // F1 (R4): cast ::reg* sobre string construída revela nome/OID de objeto.
-  if (/::\s*reg[a-z]+/i.test(s) || /\breg(class|role|namespace|proc|procedure|type|oper|operator|config|dictionary)\b/i.test(s)) {
-    throw new Error("Consulta gerada usa cast para tipo de catálogo (reg*) — bloqueada.");
-  }
-  // F1 (R4): funções niládicas de identidade revelam role/db/schema.
-  if (/\b(current_catalog|current_role|current_user|current_schema|session_user|system_user)\b/i.test(s)) {
-    throw new Error("Consulta gerada referencia identidade da sessão — bloqueada.");
-  }
-  // F1: ALLOWLIST de chamadas de função (default-deny). Fecha schema_to_xml /
-  // database_to_xml / dblink / current_setting / … e qualquer função futura.
-  for (const m of s.toLowerCase().matchAll(/([a-z_][a-z0-9_]+)\s*\(/g)) {
-    if (!FUNCOES_OK.has(m[1])) {
-      throw new Error(`Função não permitida na consulta gerada: ${m[1]} — bloqueada.`);
-    }
-  }
-}
+// Validação/saneamento do SQL do modelo: ver ./guards.ts (funções puras,
+// testadas em ./guards_test.ts; espelham as guardas de executar_consulta_ia).
 
 // ---------------------------------------------------------------------------
-// Chama o Gemini para gerar SQL a partir da pergunta em linguagem natural
+// Chama o Gemini para gerar SQL a partir da pergunta em linguagem natural.
+// Percorre a cadeia GEMINI_MODELOS; 503 -> backoff 2x no mesmo modelo;
+// 404/400 -> próximo modelo. Todos falharam -> lança (o chamador degrada).
 // ---------------------------------------------------------------------------
-async function gerarSqlComGemini(
-  pergunta: string
-): Promise<{ sql: string | null; tipo?: "esclarecimento" | "fora_do_escopo"; mensagem?: unknown }> {
+async function gerarSqlComGemini(pergunta: string): Promise<RespostaModelo> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY não configurada nos secrets da função.");
 
   const corpoRequisicao = JSON.stringify({
-    contents: [
-      {
-        parts: [{ text: `${SCHEMA_PROMPT}\n\nPERGUNTA DO USUÁRIO: ${pergunta}` }],
-      },
-    ],
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.1,
-    },
+    contents: [{ parts: [{ text: `${SCHEMA_PROMPT}\n\nPERGUNTA DO USUÁRIO: ${pergunta}` }] }],
+    generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
   });
 
-  const MAX_TENTATIVAS = 2; // 1 tentativa original + 1 repetição em caso de sobrecarga temporária
   let ultimoErro: Error | null = null;
 
-  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
-    const resposta = await fetch(GEMINI_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-goog-api-key": apiKey,
-      },
-      body: corpoRequisicao,
-    });
+  for (const modelo of GEMINI_MODELOS) {
+    for (let tentativa = 1; tentativa <= 2; tentativa++) {
+      let resposta: Response;
+      try {
+        resposta = await fetch(geminiEndpoint(modelo), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
+          body: corpoRequisicao,
+        });
+      } catch (e) {
+        ultimoErro = new Error(`Rede falhou ao chamar ${modelo}: ${e instanceof Error ? e.message : e}`);
+        break; // próximo modelo
+      }
 
-    if (resposta.status === 503 && tentativa < MAX_TENTATIVAS) {
-      // Sobrecarga temporária do lado do Gemini — espera um pouco e tenta de novo
-      await new Promise((r) => setTimeout(r, 1500));
-      continue;
+      if (resposta.ok) {
+        const dados = await resposta.json();
+        const textoGerado = dados?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!textoGerado) {
+          ultimoErro = new Error(`Resposta vazia de ${modelo}.`);
+          break; // próximo modelo
+        }
+        return interpretarRespostaModelo(textoGerado);
+      }
+
+      if (resposta.status === 503) {
+        ultimoErro = new Error(`Modelo ${modelo} sobrecarregado (503).`);
+        if (tentativa < 2) {
+          await new Promise((r) => setTimeout(r, 1200 * tentativa));
+          continue; // repete o mesmo modelo
+        }
+        break; // 503 persistente -> próximo modelo
+      }
+
+      if (resposta.status === 404 || resposta.status === 400) {
+        ultimoErro = new Error(`Modelo ${modelo} indisponível (${resposta.status}).`);
+        break; // -> próximo modelo, sem repetir
+      }
+
+      // 401 / 429 (cota) / 500 / outro
+      const corpoErro = (await resposta.text()).slice(0, 300);
+      ultimoErro = new Error(`Erro ${resposta.status} em ${modelo}: ${corpoErro}`);
+      break; // -> próximo modelo
     }
-
-    if (!resposta.ok) {
-      const corpoErro = await resposta.text();
-      ultimoErro = new Error(`Erro na API do Gemini (${resposta.status}): ${corpoErro}`);
-      break;
-    }
-
-    const dados = await resposta.json();
-    const textoGerado = dados?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textoGerado) throw new Error("Resposta do Gemini veio vazia ou em formato inesperado.");
-
-    return JSON.parse(textoGerado);
   }
 
-  throw ultimoErro ?? new Error("Erro desconhecido ao chamar a API do Gemini.");
+  throw ultimoErro ?? new Error("Todos os modelos da cadeia falharam.");
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +279,25 @@ Deno.serve(async (req: Request) => {
     }
 
     // ---- 2. Fallback: Gemini gera o SQL ----
-    const respostaGemini = await gerarSqlComGemini(pergunta);
+    // O caminho LLM tem "direito a falhar": qualquer erro aqui (cadeia de
+    // modelos esgotada, SQL inválido, execução falhou) vira degradação amigável
+    // com sugestão de reformular — nunca erro cru, nunca número inventado.
+    let respostaGemini: RespostaModelo;
+    try {
+      respostaGemini = await gerarSqlComGemini(pergunta);
+    } catch (erroLlm) {
+      await supabase.from("consultas_ia_log").insert({
+        usuario, pergunta, sql_gerado: null, origem: "gemini_degradado", sucesso: false,
+        erro: paraTextoSeguro(erroLlm instanceof Error ? erroLlm.message : erroLlm),
+      });
+      return new Response(
+        JSON.stringify({
+          resposta: "Não consegui responder a essa pergunta com segurança agora. Tente reformular de forma mais simples, ou use uma das perguntas sugeridas.",
+          origem: "degradado",
+        }),
+        { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!respostaGemini.sql) {
       const mensagemTexto = paraTextoSeguro(respostaGemini.mensagem) || "Não consegui entender essa pergunta.";
@@ -363,14 +324,28 @@ Deno.serve(async (req: Request) => {
 
     const sql = respostaGemini.sql;
 
-    validarSqlGeminiOuFalhar(sql);
-
-    // ---- 3. Executa via a função segura (validação dupla + role só-leitura) ----
-    const { data: linhas, error: erroExecucao } = await supabase.rpc("executar_consulta_ia", {
-      sql_consulta: sql,
-    });
-
-    if (erroExecucao) throw erroExecucao;
+    // ---- 3. Valida e executa. Falha aqui = degradação, não erro cru. ----
+    let linhas: Record<string, unknown>[] | null = null;
+    try {
+      validarSqlGeminiOuFalhar(sql);
+      const { data, error: erroExecucao } = await supabase.rpc("executar_consulta_ia", {
+        sql_consulta: sql,
+      });
+      if (erroExecucao) throw erroExecucao;
+      linhas = data;
+    } catch (erroSql) {
+      await supabase.from("consultas_ia_log").insert({
+        usuario, pergunta, sql_gerado: sql, origem: "gemini_degradado", sucesso: false,
+        erro: paraTextoSeguro(erroSql instanceof Error ? erroSql.message : erroSql),
+      });
+      return new Response(
+        JSON.stringify({
+          resposta: "Não consegui montar uma consulta válida para essa pergunta. Tente reformular de forma mais simples, ou use uma das perguntas sugeridas.",
+          origem: "degradado",
+        }),
+        { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
 
     const resposta = formatarResultado(linhas ?? []);
     const grafico = detectarGraficoAutomatico(linhas ?? [], pergunta);
@@ -388,12 +363,14 @@ Deno.serve(async (req: Request) => {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
   } catch (erro) {
+    // Erro inesperado (corpo malformado, intenção lançou, etc.) — os caminhos
+    // esperados de falha do LLM já degradam acima com origem "degradado".
     console.error("Erro no gecope-assistant:", erro);
 
     await supabase.from("consultas_ia_log").insert({
       usuario,
       pergunta,
-      origem: "gemini",
+      origem: "erro",
       sucesso: false,
       erro: paraTextoSeguro(erro instanceof Error ? erro.message : erro),
     });

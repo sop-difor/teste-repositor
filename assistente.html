@@ -721,6 +721,9 @@
         );
       } else if (resposta.status === 429 || dados.origem === "limite") {
         adicionarTurnoAssistente(dados.resposta || "Limite de perguntas por hora atingido. Aguarde alguns minutos.", { aviso: true });
+      } else if (dados.origem === "degradado") {
+        // Caminho LLM falhou — não é erro do sistema, é "não consegui".
+        adicionarTurnoAssistente(dados.resposta || "Não consegui responder a essa pergunta agora. Tente reformular ou use uma sugestão.", { aviso: true });
       } else if (!resposta.ok || dados.origem === "erro") {
         adicionarTurnoAssistente(dados.resposta || "Não consegui processar essa pergunta.", { erro: true });
       } else if (dados.precisaEsclarecimento) {
