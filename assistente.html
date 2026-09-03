@@ -245,6 +245,21 @@
     font-size: 14px;
   }
 
+  /* Aviso (sessão, limite de uso): não é falha do sistema — tom neutro, não vermelho. */
+  .conteudo-assistente.aviso {
+    color: var(--text-secondary);
+    background: var(--bg-card-usuario);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+
+  .chip.chip-off {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
   .badge-origem {
     display: block;
     font-size: 11px;
@@ -479,26 +494,56 @@
 
   btnEnviar.addEventListener("click", () => enviarPergunta(campoTexto.value));
   sugestoes.addEventListener("click", (e) => {
-    if (e.target.classList.contains("chip")) enviarPergunta(e.target.textContent);
+    if (e.target.classList.contains("chip") && !e.target.classList.contains("chip-off")) {
+      enviarPergunta(e.target.textContent);
+    }
   });
 
   // ---------------------------------------------------------------------
-  // F1: porta de sessão. Sem sessão do GECOPE, o assistente não funciona —
-  // desabilita a entrada e explica. A integração plena (redirecionar para o
-  // login, herdar o nome do usuário no cabeçalho) é a F8.
+  // F1: porta de sessão. Sem sessão do GECOPE (nunca teve, ou expirou no meio),
+  // o assistente não funciona — desabilita entrada + chips e explica, com um
+  // caminho clicável. A integração plena (redirecionar para o login, herdar o
+  // nome do usuário no cabeçalho) é a F8.
   // ---------------------------------------------------------------------
-  (async function portaDeSessao() {
-    const token = await obterTokenSessao();
-    if (token) return; // ok, tem sessão
+  let sessaoOk = false;
+  const PLACEHOLDER_PADRAO = campoTexto.getAttribute("placeholder");
+
+  function travarEntrada() {
+    sessaoOk = false;
     campoTexto.disabled = true;
-    campoTexto.placeholder = "Entre no GECOPE para usar o assistente";
     btnEnviar.disabled = true;
+    sugestoes.querySelectorAll(".chip").forEach((c) => c.classList.add("chip-off"));
+  }
+
+  // Chamada quando confirmamos que NÃO há sessão (na carga, em token nulo no
+  // envio, ou em resposta 401 da Edge Function). Mostra o aviso com link.
+  function fecharPorSessao() {
+    travarEntrada();
+    campoTexto.placeholder = "Entre no GECOPE para usar o assistente";
     const alvo = document.getElementById("saudacaoVazio");
-    if (alvo) {
+    if (alvo && !alvo.dataset.sessaoAviso) {
+      alvo.dataset.sessaoAviso = "1";
       alvo.textContent = "Entre no GECOPE para continuar";
       const p = alvo.nextElementSibling;
       if (p) p.innerHTML = 'Abra o <a href="index.html" style="color:var(--accent)">Painel Principal</a>, faça login e volte a esta página.';
     }
+  }
+
+  function abrirPorSessao() {
+    sessaoOk = true;
+    campoTexto.disabled = false;
+    campoTexto.placeholder = PLACEHOLDER_PADRAO;
+    btnEnviar.disabled = false;
+    sugestoes.querySelectorAll(".chip").forEach((c) => c.classList.remove("chip-off"));
+  }
+
+  // começa travado (sem mostrar o aviso ainda) até confirmar a sessão —
+  // evita "flash" de UI funcional para quem está deslogado.
+  travarEntrada();
+  (async function portaDeSessaoInicial() {
+    const token = await obterTokenSessao();
+    if (token) abrirPorSessao();
+    else fecharPorSessao();
   })();
 
   function adicionarTurnoUsuario(texto) {
@@ -561,17 +606,19 @@
     }
   }
 
-  function adicionarTurnoAssistente(texto, { erro = false, origem = null, grafico = null, esclarecimento = false } = {}) {
+  function adicionarTurnoAssistente(texto, { erro = false, aviso = false, origem = null, grafico = null, esclarecimento = false } = {}) {
     if (estadoVazio) estadoVazio.remove();
 
     const turno = document.createElement("div");
     turno.className = "turno-assistente";
 
-    const avatar = erro ? "" : `<div class="avatar-assistente"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="8.5"/></svg></div>`;
+    const semAvatar = erro || aviso;
+    const avatar = semAvatar ? "" : `<div class="avatar-assistente"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="8.5"/></svg></div>`;
+    const classeExtra = erro ? " erro" : aviso ? " aviso" : "";
 
     turno.innerHTML = `
       ${avatar}
-      <div class="conteudo-assistente${erro ? " erro" : ""}"></div>
+      <div class="conteudo-assistente${classeExtra}"></div>
     `;
     turno.querySelector(".conteudo-assistente").textContent = texto;
 
@@ -622,12 +669,14 @@
     if (!texto) return;
 
     // F1: sem sessão do GECOPE, não há a quem atribuir a pergunta nem token
-    // para a Edge Function validar. Bloqueia antes de mostrar o turno.
+    // para a Edge Function validar. Fecha a porta de sessão (entrada + chips +
+    // aviso com link) em vez de só mostrar um balão.
     const token = await obterTokenSessao();
     if (!token) {
+      fecharPorSessao();
       adicionarTurnoAssistente(
-        "Entre no GECOPE para usar o assistente. Abra o Painel Principal, faça login e volte aqui.",
-        { erro: true }
+        "Sua sessão do GECOPE não está ativa. Abra o Painel Principal, faça login e recarregue esta página.",
+        { aviso: true }
       );
       return;
     }
@@ -662,7 +711,17 @@
       const dados = await resposta.json();
       removerDigitando();
 
-      if (!resposta.ok || dados.origem === "erro") {
+      if (resposta.status === 401 || dados.origem === "sessao") {
+        // F1: sessão caiu no meio do uso — fecha a porta e orienta, sem balão
+        // vermelho de "erro".
+        fecharPorSessao();
+        adicionarTurnoAssistente(
+          dados.resposta || "Sua sessão do GECOPE expirou. Entre novamente e recarregue esta página.",
+          { aviso: true }
+        );
+      } else if (resposta.status === 429 || dados.origem === "limite") {
+        adicionarTurnoAssistente(dados.resposta || "Limite de perguntas por hora atingido. Aguarde alguns minutos.", { aviso: true });
+      } else if (!resposta.ok || dados.origem === "erro") {
         adicionarTurnoAssistente(dados.resposta || "Não consegui processar essa pergunta.", { erro: true });
       } else if (dados.precisaEsclarecimento) {
         // Guarda a pergunta que o usuário realmente quer responder, para
@@ -677,7 +736,7 @@
       adicionarTurnoAssistente("Não consegui me conectar ao assistente agora. Tente novamente em instantes.", { erro: true });
       console.error(e);
     } finally {
-      btnEnviar.disabled = false;
+      if (sessaoOk) btnEnviar.disabled = false;
     }
   }
 </script>

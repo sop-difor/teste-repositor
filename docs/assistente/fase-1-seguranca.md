@@ -20,29 +20,41 @@ piloto ter o link. Encerra com **sign-off do usuário** (aplica o SQL em produç
 
 Transacional e idempotente. Contém:
 
-- **A** — `REVOKE EXECUTE ON public.executar_consulta_ia(text) FROM anon, authenticated, public`.
-  Sobram `service_role` (a Edge Function) e o owner `gecope_ia_readonly`.
+- **A** — `REVOKE EXECUTE ON public.executar_consulta_ia(text) FROM public, anon, authenticated`.
+  Sobram `service_role` (a Edge Function, re-concedido explicitamente) e o owner
+  `gecope_ia_readonly`. Verificado: pós-`REVOKE`, `proacl` = `{gecope_ia_readonly=X, service_role=X}`.
 - **B** — `CREATE OR REPLACE FUNCTION executar_consulta_ia` com o blocklist usando `\y`
-  (mesma lista de palavras, só o operador de borda muda).
-- **C** — na mesma recriação, guarda nova: rejeita referência explícita a qualquer schema
-  fora de `public` (`net`, `cron`, `extensions`, `auth`, `storage`, `vault`, `pg_catalog`,
-  `information_schema`, …) e o prefixo `pg_*`.
-- **C (opcional, comentado)** — `REVOKE USAGE ON SCHEMA net FROM PUBLIC` + `REVOKE ALL ON
-  net.*  FROM PUBLIC` + `REVOKE SELECT ON extensions.pg_stat_statements* FROM PUBLIC`.
-  Fecha o buraco na origem, mas mexe em schema compartilhado da plataforma —
-  `anon`/`authenticated`/`service_role`/`postgres` têm `USAGE` próprio e **não** são
-  afetados; só perde acesso quem dependia de `PUBLIC` (que é o objetivo). Deixado
-  comentado para o usuário decidir; a guarda da função já contém o assistente sem isto.
+  (mesma lista de palavras, só o operador de borda muda). Corpo base = `pg_get_functiondef`
+  da função em produção em 2026-09-03; diffs listados no cabeçalho do `.sql`.
+- **C** — a guarda de schema **normaliza antes de checar**: remove comentários de bloco
+  (`/* */`) e de linha (`--`) e aspas de identificador (`"`), e só então aplica os regex.
+  Fecha os bypasses que o `rev-seguranca` achou: `select ... from "net"."_http_response"` e
+  `net/**/._http_response`. Rejeita: schema fora de `public` (`net`, `cron`, `extensions`,
+  `auth`, `storage`, `vault`, `information_schema`, …); **qualquer** identificador `pg_*`
+  (qualificado ou não — `pg_roles`, `pg_stat_activity`, `pg_read_file`, `pg_sleep`);
+  `dblink` / `current_setting` / `set_config` / `lo_import` / `lo_export`.
+- **C — `REVOKE ... FROM PUBLIC` no schema `net`** (buraco na origem): tentado por padrão
+  na migração, **dentro de um bloco que não aborta se falhar**. O SQL Editor roda como
+  `postgres`, que **não** é superuser nem membro de `supabase_admin` (o concedente do
+  grant a `PUBLIC`) — então este `REVOKE` provavelmente falha, com `RAISE NOTICE`
+  explicando. Se falhar, a guarda normalizada da função (item C acima) é a contenção
+  efetiva; para fechar na origem, abrir chamado no suporte Supabase. `anon`,
+  `authenticated`, `service_role`, `postgres`, `supabase_functions_admin` têm `USAGE`
+  próprio em `net` e **não** são afetados — só `gecope_ia_readonly` (que é o alvo).
+  `pg_stat_statements` e `cron` **não** entram: confirmado que `gecope_ia_readonly` não
+  tem `USAGE` nesses schemas, então não são alcançáveis (o `REVOKE` seria no-op).
 - **O guard de `LIMIT` (`\blimit\s+\d+`) fica INTOCADO de propósito.** O `LIMIT`
   duplicado é bug de **comportamento** — corrigido e testado na **F2**. A F1 só mexe na
   camada de segurança.
-- Bloco de verificação ao final (rodar fora da transação).
+- Bloco de `ROLLBACK` comentado + bloco de verificação ao final (rodar fora da transação).
 
-Limitação assumida: as guardas de blocklist/schema são regex sobre o texto do SQL, então
-um literal de string contendo `'... net.'` ou `'drop'` pode gerar falso-positivo
-("consulta não permitida"). É aceitável para uma guarda de segurança e as colunas dos 13
-objetos não têm URL/e-mail. As barreiras primárias são o `REVOKE EXECUTE` (A) e a Edge
-Function autenticada (D).
+Limitação assumida: mesmo com a normalização, as guardas são regex sobre o texto do SQL —
+um literal de string contendo `'...pg_...'` ou `'drop'` pode gerar falso-positivo
+("consulta não permitida"), e um `--` dentro de um literal quebra a consulta (erro, não
+brecha). É aceitável para uma guarda de segurança; as colunas dos 13 objetos não têm
+URL/e-mail. As barreiras primárias continuam sendo o `REVOKE EXECUTE` (A) + a Edge
+Function autenticada (D); a guarda normalizada é a contenção de schema quando o `REVOKE`
+de `PUBLIC` no `net` não pôde ser aplicado.
 
 ### 2. Edge Function — `supabase/functions/gecope-assistant/index.ts`
 
@@ -51,9 +63,13 @@ Function autenticada (D).
   passa a ser `user.email` (fallback `user.id`) — **nunca** do corpo. Mesmo padrão da
   função `approve-user`.
 - **Rate limit** — `40` perguntas por usuário por hora (conta `consultas_ia_log` na
-  janela). Excedeu → `429` com mensagem amigável. Aproximado; suficiente para o piloto.
-- **B/C espelhados** — `validarSqlGeminiOuFalhar` ganha a mesma rejeição de schema fora
-  de `public` e `pg_*` (regex JS, onde `\b` funciona como borda).
+  janela). Excedeu → `429`, `origem: "limite"`, mensagem "Limite de 40 perguntas por hora
+  atingido. Aguarde alguns minutos e continue." Aproximado (TOCTOU: o log só grava ao fim
+  — rajada concorrente passa); suficiente para o piloto; limitador exato é dívida.
+- **B/C espelhados** — `validarSqlGeminiOuFalhar` normaliza (tira comentários e aspas) e
+  aplica as mesmas rejeições de schema / `pg_*` / funções perigosas (regex JS).
+- Mensagens de sessão passam a `origem: "sessao"` (não `"erro"`) para o front tratar sem
+  balão vermelho.
 - `verify_jwt: true` no painel continua.
 
 ### 3. Front-end — `assistente.html`
@@ -62,40 +78,46 @@ Function autenticada (D).
   `cronograma.html`). `SUPABASE_URL` / anon key vêm de `window.*`, não mais hardcoded.
 - Envia `Authorization: Bearer <access_token da sessão>`; `apikey` = anon key (exigido
   pelo gateway). `usuario` **sai** do corpo.
-- **Porta de sessão**: sem sessão do GECOPE, desabilita a entrada e mostra "Entre no
-  GECOPE para usar o assistente" com link para `index.html`. Trata `401` da função com a
-  mesma mensagem.
+- **Porta de sessão** (`travarEntrada` / `fecharPorSessao` / `abrirPorSessao`):
+  - a entrada e o botão **começam desabilitados**; só abrem depois de confirmar a sessão
+    (sem "flash" de UI funcional para quem está deslogado);
+  - os **chips de sugestão** também são desabilitados (`.chip-off`) sem sessão;
+  - a porta **re-fecha** quando o token está nulo no envio **ou** a Edge Function
+    responde `401` / `origem: "sessao"` — não só na carga. Mensagem única com link para o
+    Painel Principal;
+  - avisos de sessão e de limite usam estilo `.aviso` (neutro), não o `.erro` vermelho.
 - Integração completa (link no `index.html`, tema unificado, nome do usuário no
   cabeçalho) continua sendo **F8**.
 
 ### 4. LGPD — `consultas_ia_log` (buraco F)
 
-- Estado atual conferido: RLS **on**, 1 policy (`ALL USING auth.role() = 'service_role'`)
-  — só o `service_role` lê e grava. Nenhum usuário nem admin lê pela API. **Suficiente
-  para o controle de acesso.**
+- Estado atual conferido: RLS **on**, 1 policy (`ALL USING auth.role() = 'service_role'`).
+  Mas `anon` / `authenticated` ainda tinham `GRANT` de tabela — só a RLS (sem `FORCE`)
+  separava o texto das perguntas do público. A F1 fecha a folga:
+  `REVOKE ALL ON public.consultas_ia_log FROM anon, authenticated` +
+  `ALTER TABLE ... FORCE ROW LEVEL SECURITY`.
 - A pergunta é mantida (é insumo da F5/F7 — transformar falha em intenção/eval).
-- **Retenção**: purga de registros com mais de **180 dias** — implementar como job
-  `pg_cron` na **F7** (junto do painel de observabilidade). Registrado aqui como decisão;
-  não construído na F1.
-- Documentar no `escopo-dados.md` que a pergunta pode conter dado pessoal e o log é
-  restrito ao `service_role`.
+- **Retenção**: purga de registros com mais de **180 dias** — job `pg_cron` na **F7**
+  (junto do painel de observabilidade). Registrado como decisão; não construído na F1.
+- `escopo-dados.md` ganhou a seção "Dado pessoal e o log de perguntas (LGPD)".
 
 ## Decisão da F0 resolvida
 
-**FU-17** — migrações do assistente vão em **`sql/assistente/`** (subpasta dedicada,
-padrão dos projetos recentes tipo `sql/reestruturacao_tabelas/`), não soltas em `sql/`.
-Ao aplicar, o usuário move para `sql/_aplicados/` como de praxe — ou mantemos
-`sql/assistente/` como pasta viva do assistente. **A confirmar no sign-off.**
+**FU-17** — migrações do assistente vão em **`sql/assistente/`** como **pasta viva**, no
+mesmo modelo de `sql/reestruturacao_tabelas/` (que também não foi movida para
+`sql/_aplicados/`). Não mover para `sql/_aplicados/` ao aplicar; só registrar exceção se o
+usuário preferir mover.
 
 ## Ordem de aplicação (o usuário faz)
 
 1. Revisar `sql/assistente/f1_seguranca.sql`.
-2. Aplicar no SQL Editor do projeto `qexdnxqmiaarzwwwrcor`. Conferir o bloco de
-   verificação.
-3. (Opcional) rodar a seção comentada do `net`/`pg_stat_statements` se nada legítimo
-   depender do acesso de `PUBLIC` a `net`.
+2. Aplicar no SQL Editor do projeto `qexdnxqmiaarzwwwrcor`. Ler as mensagens `NOTICE` do
+   bloco do `net` (deve dizer se o `REVOKE FROM PUBLIC` passou ou falhou — falhar é
+   esperado e ok). Rodar o bloco de verificação.
+3. Se o `REVOKE ... FROM PUBLIC` no `net` falhou e você quer fechar na origem: abrir
+   chamado no suporte Supabase (`REVOKE USAGE ON SCHEMA net FROM PUBLIC`).
 4. Autorizar o deploy da Edge Function (`supabase functions deploy gecope-assistant`).
-   Rollback = redeploy da v12 (código em git no commit `782e86c`).
+   Rollback = redeploy da v12 (código em git no commit `782e86c`) + bloco `ROLLBACK` do `.sql`.
 
 ## Como verificar a F1
 
@@ -105,14 +127,21 @@ Ao aplicar, o usuário move para `sql/_aplicados/` como de praxe — ou mantemos
 | 2 | idem `authenticated` | `false` |
 | 3 | idem `service_role` | `true` |
 | 4 | `select ('select 1; drop x' ~* '\y(insert\|update\|delete\|drop\|alter\|truncate\|grant\|revoke\|create)\y')` | `true` |
-| 5 | `select * from executar_consulta_ia('select 1 from net._http_response')` | ERRO "schema fora de public" |
-| 6 | `select * from executar_consulta_ia('select count(*) from contratos_edificacao')` | retorna número |
-| 7 | `POST` na Edge Function com `Authorization: Bearer <anon key>` | `401` "Sessão inválida" |
-| 8 | `POST` com `Bearer <access_token de usuário>` | responde normalmente; `consultas_ia_log.usuario` = e-mail do usuário |
-| 9 | 41ª pergunta do mesmo usuário em 1 h | `429` com mensagem amigável |
-| 10 | Abrir `assistente.html` sem sessão | entrada desabilitada + aviso de login |
+| 5 | `executar_consulta_ia('select 1 from net._http_response')` | ERRO "schema fora de public" |
+| 5b | `executar_consulta_ia('select 1 from "net"."_http_response"')` (aspas) | ERRO "schema fora de public" |
+| 5c | `executar_consulta_ia('select 1 from net/**/._http_response')` (comentário) | ERRO "schema fora de public" |
+| 5d | `executar_consulta_ia('select 1 from pg_roles')` (catálogo não-qualificado) | ERRO "catálogo do sistema" |
+| 5e | `executar_consulta_ia($$select current_setting('is_superuser')$$)` | ERRO "Função não permitida" |
+| 6 | `executar_consulta_ia('select count(*) from contratos_edificacao')` | retorna número |
+| 6b | `executar_consulta_ia` com join contrato+ficha (consulta legítima do assistente) | retorna linhas |
+| 7 | `POST` na Edge Function com `Authorization: Bearer <anon key>` | `401`, `origem: "sessao"` |
+| 8 | `POST` com `Bearer <access_token de usuário>` | responde normalmente; `consultas_ia_log.usuario` = e-mail |
+| 9 | 41ª pergunta do mesmo usuário em 1 h | `429`, `origem: "limite"` |
+| 10 | Abrir `assistente.html` sem sessão | entrada, botão e chips desabilitados desde a carga + aviso com link |
+| 10b | Sessão expira no meio da conversa | balão neutro (`.aviso`) com link, porta re-fecha |
 | 11 | `git grep -n "eyJ" assistente.html` | sem JWT hardcoded (anon key vem de `config.js`) |
-| 12 | `deno check supabase/functions/gecope-assistant/index.ts` | compila (rodar onde houver Deno) |
+| 12 | `has_table_privilege('anon','public.consultas_ia_log','select')` / `relforcerowsecurity` | `false` / `true` |
+| 13 | `deno check supabase/functions/gecope-assistant/index.ts` | compila (rodar onde houver Deno) |
 
 ## Fora do escopo da F1 (fases futuras)
 

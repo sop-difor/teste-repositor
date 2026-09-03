@@ -65,6 +65,9 @@ Confere, conforme a fase:
 - **Injeção via prompt**: o texto livre da pergunta chega ao LLM. Confirmar que uma
   pergunta que tenta induzir SQL fora do dicionário (outra tabela, `UNION`, subconsulta a
   `net.*`) é contida pelas camadas de banco/Edge, não só pelo prompt.
+- **Guardas por regex**: testar contra identificador entre aspas (`"net"."x"`), comentário
+  SQL (`net/**/.x`, `net --x\n.x`) e catálogo não-qualificado (`pg_roles`), não só a forma
+  canônica. As duas camadas (função + Edge) não podem compartilhar o mesmo ponto cego.
 - Exposição via PostgREST: `executar_consulta_ia` **não** executável por `anon` /
   `authenticated` (a partir da F1).
 - Identidade: `usuario` derivado do JWT no servidor, nunca do corpo (a partir da F1).

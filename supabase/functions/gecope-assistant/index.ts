@@ -54,26 +54,38 @@ function paraTextoSeguro(valor: unknown): string {
 // existe dentro da função executar_consulta_ia no Postgres (defesa em
 // profundidade: mesmo que uma camada falhe, a outra ainda bloqueia).
 // ---------------------------------------------------------------------------
+// Espelha, em JS, as guardas da função executar_consulta_ia (defesa em
+// profundidade). Normaliza antes de checar — sem comentários de bloco/linha e
+// sem aspas de identificador — para fechar bypass por `"net"."x"` e `net/**/.x`.
 function validarSqlGeminiOuFalhar(sql: string): void {
-  const sqlLimpo = sql.trim();
-  if (!/^select\s/i.test(sqlLimpo)) {
+  const s = sql
+    .trim()
+    .replace(/\/\*[\s\S]*?\*\//g, " ") // comentário de bloco
+    .replace(/--[^\n]*/g, " ")          // comentário de linha
+    .replace(/"/g, " ");                // aspas de identificador
+
+  if (!/^\s*select\s/i.test(s)) {
     throw new Error("Consulta gerada não começa com SELECT — bloqueada.");
   }
-  if (/\b(insert|update|delete|drop|alter|truncate|grant|revoke|create)\b/i.test(sqlLimpo)) {
+  if (/\b(insert|update|delete|drop|alter|truncate|grant|revoke|create)\b/i.test(s)) {
     throw new Error("Comando não permitido detectado na consulta gerada — bloqueada.");
   }
-  if (/;\s*\S/.test(sqlLimpo)) {
+  if (/;\s*\S/.test(s)) {
     throw new Error("Mais de uma instrução detectada — bloqueada.");
   }
-  // F1: espelha a guarda de schema da função executar_consulta_ia — nenhuma
-  // referência explícita a schema fora de 'public'. A role gecope_ia_readonly
-  // tem USAGE em 'net' (herdado de PUBLIC) e net._http_response pode conter
-  // tokens de chamadas HTTP de saída.
-  if (/\b(net|cron|extensions|auth|storage|vault|graphql|graphql_public|realtime|pgsodium|pgbouncer|pg_catalog|pg_temp|information_schema|supabase_migrations|supabase_functions)\s*\./i.test(sqlLimpo)) {
+  // F1: nenhuma referência a schema fora de 'public'. gecope_ia_readonly tem
+  // USAGE em 'net' (herdado de PUBLIC) e net._http_response pode conter tokens
+  // de chamadas HTTP de saída do pg_net.
+  if (/\b(net|cron|extensions|auth|storage|vault|graphql|graphql_public|realtime|pgsodium|pgbouncer|pg_temp|pg_toast|information_schema|supabase_migrations|supabase_functions|_analytics|_realtime)\s*\./i.test(s)) {
     throw new Error("Consulta gerada referencia schema fora de public — bloqueada.");
   }
-  if (/\bpg_[a-z0-9_]+\s*\./i.test(sqlLimpo)) {
+  // F1: nenhum identificador de catálogo do sistema, qualificado ou não.
+  if (/\bpg_[a-z0-9_]+/i.test(s)) {
     throw new Error("Consulta gerada referencia catálogo do sistema — bloqueada.");
+  }
+  // F1: funções de leitura de ambiente / ponte externa.
+  if (/\b(dblink|current_setting|set_config|lo_import|lo_export)\b/i.test(s)) {
+    throw new Error("Função não permitida detectada na consulta gerada — bloqueada.");
   }
 }
 
@@ -227,14 +239,14 @@ Deno.serve(async (req: Request) => {
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) {
     return new Response(
-      JSON.stringify({ resposta: "Faça login no GECOPE para usar o assistente.", origem: "erro" }),
+      JSON.stringify({ resposta: "Entre no GECOPE para usar o assistente.", origem: "sessao" }),
       { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
   }
   const { data: { user }, error: erroAuth } = await supabase.auth.getUser(token);
   if (erroAuth || !user) {
     return new Response(
-      JSON.stringify({ resposta: "Sessão inválida ou expirada. Entre no GECOPE novamente.", origem: "erro" }),
+      JSON.stringify({ resposta: "Sua sessão do GECOPE expirou. Entre novamente e recarregue esta página.", origem: "sessao" }),
       { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
   }
@@ -255,8 +267,8 @@ Deno.serve(async (req: Request) => {
     if (await limiteExcedido(supabase, usuario)) {
       return new Response(
         JSON.stringify({
-          resposta: `Você fez muitas perguntas na última hora (limite de ${RATE_LIMITE_MAX}). Tente de novo daqui a pouco.`,
-          origem: "erro",
+          resposta: `Limite de ${RATE_LIMITE_MAX} perguntas por hora atingido. Aguarde alguns minutos e continue.`,
+          origem: "limite",
         }),
         { status: 429, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
       );
