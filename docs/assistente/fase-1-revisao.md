@@ -182,15 +182,23 @@ doc reforçadas para exigir contagem real (> 0).
   produção salvo os deltas intencionais; commit só toca arquivos do assistente;
   `git grep "eyJ" assistente.html` limpo.
 
-## Situação — F1 PRONTA PARA SIGN-OFF
+## Situação — F1 APLICADA EM PRODUÇÃO
 
-**4/4 revisores `APROVADO`** (`rev-seguranca` após 3 bloqueios + escalonamento + R4 de
-conferência; `rev-correcao` R1–R3; `rev-produto` e `rev-aderencia` R1). Falta:
-1. usuário aplica `sql/assistente/f1_seguranca.sql` no projeto `qexdnxqmiaarzwwwrcor`;
-2. usuário autoriza o deploy da Edge Function (`supabase functions deploy gecope-assistant`);
-3. usuário abre o chamado ao suporte Supabase (`REVOKE … FROM PUBLIC` no `net`) — em
-   paralelo, não bloqueia F2;
-4. sign-off registrado → F1 concluída, segue para **F2**.
+**4/4 revisores `APROVADO`.** O usuário aplicou `sql/assistente/f1_seguranca.sql` em
+`qexdnxqmiaarzwwwrcor` em 03/09/2026. Conferido ao vivo:
+- `EXECUTE` de `anon`/`authenticated` na função = `false`; `service_role` = `true`;
+- 7 vetores de ataque (net qualificado / aspas / comentário aninhado / `schema_to_xml` /
+  `::regclass` / `current_user` / `; drop`) → **todos barram**;
+- `count(*)` em `processos` / `contratos_edificacao` / `vw_processos_financeiro` →
+  **retornam linha** (buraco G resolvido);
+- `consultas_ia_log`: `anon` sem `SELECT` + `FORCE RLS`; 9 policies `ia_ro_select`.
+
+Consultas com `LIMIT` explícito ainda dão `syntax error at or near "limit"` — bug do
+`LIMIT` duplicado, **intocado de propósito**, corrige na **F2**.
+
+Pendências (não bloqueiam a F2):
+1. deploy da Edge Function (`supabase functions deploy gecope-assistant`);
+2. chamado ao suporte Supabase (`REVOKE … FROM PUBLIC` no `net`).
 
 Follow-ups para fases futuras: FU-28/44/45/46 (F2), FU-35 (F2/F5/F6), FU-50 (F5 — filtro
 por identidade), FU-39 (F8 — tema/paleta).

@@ -268,11 +268,15 @@ commit;
 -- select * from executar_consulta_ia($$select query_to_xml('select 1 from net._http_response',true,false,'')$$); -- "Função não permitida: query_to_xml"
 -- select * from executar_consulta_ia($$select 1; drop table x$$);                            -- "mais de uma instrução" / "Comando não permitido"
 --
--- 3) consulta legítima (deve RETORNAR o número real, > 0):
--- select * from executar_consulta_ia($$select count(*) from contratos_edificacao$$);  -- ~352, NÃO 0
--- select * from executar_consulta_ia($$select c.descricao_obra, f.saldo_contrato
---   from contratos_edificacao c join ficha_contrato f on f.id_contrato = c.id_contrato limit 5$$);
--- select * from executar_consulta_ia($$select count(*) from vw_processos_financeiro$$);  -- ~318, NÃO 0
+-- 3) consulta legítima SEM 'limit' explícito (deve RETORNAR o número real, > 0).
+--    NB: consulta COM 'limit' explícito ainda dá 'syntax error at or near "limit"'
+--    (bug do LIMIT duplicado — a função sempre concatena ' limit 200'). Isso é
+--    corrigido na F2; até lá o schema_prompt manda o modelo incluir LIMIT, então
+--    o caminho LLM só fica 100% após a F2. Intenções (service_role) não usam
+--    esta função e não são afetadas.
+-- select * from executar_consulta_ia($$select count(*) from contratos_edificacao$$);      -- ~352, NÃO 0
+-- select * from executar_consulta_ia($$select count(*) from vw_processos_financeiro$$);   -- ~318, NÃO 0
+-- select * from executar_consulta_ia($$select date_trunc('year',data_assinatura) a, count(*) c from aditivos_contrato group by 1$$);
 --
 -- 3b) buraco G — a role lê a lista branca (usar SET ROLE, não SET LOCAL —
 --     SET LOCAL fora de transação é ignorado e roda como postgres/BYPASSRLS):

@@ -169,7 +169,8 @@ usuário preferir mover.
 | 5g | `executar_consulta_ia($$select database_to_xml(true,false,'')$$)` | ERRO "Função não permitida na consulta: database_to_xml" |
 | 5h | `executar_consulta_ia($$select query_to_xml('select 1 from net._http_response',true,false,'')$$)` | ERRO "Função não permitida na consulta: query_to_xml" |
 | 6 | `executar_consulta_ia('select count(*) from contratos_edificacao')` | retorna ~352 — **não 0** (buraco G) |
-| 6b | `executar_consulta_ia` com join contrato+ficha (consulta legítima do assistente) | retorna linhas |
+| 6b | `executar_consulta_ia` com join contrato+ficha **sem `limit`** | retorna linhas |
+| 6c | qualquer consulta **com `limit` explícito** | `syntax error at or near "limit"` — bug do LIMIT duplicado, **corrigido na F2** (não é regressão da F1) |
 | 7 | `POST` na Edge Function com `Authorization: Bearer <anon key>` | `401`, `origem: "sessao"` |
 | 8 | `POST` com `Bearer <access_token de usuário>` | responde normalmente; `consultas_ia_log.usuario` = e-mail |
 | 9 | 41ª pergunta do mesmo usuário em 1 h | `429`, `origem: "limite"` |
