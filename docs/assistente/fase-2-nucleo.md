@@ -25,31 +25,46 @@ reproduzidas **sem alteração**; muda só o núcleo:
 | 1 | `\b` → `\y` no guard de `LIMIT` | agora **detecta** um `LIMIT` existente e não anexa outro |
 | 2 | wrapper com `LIMIT 500` externo fixo: `select row_to_json(t) from (%s) t limit 500` | cap absoluto de linhas, qualquer que seja o `LIMIT` interno |
 | 3 | aceita `with` (CTE) no início, além de `select` | o modelo às vezes usa CTE para agregações; blocklist + timeout contêm |
-| 4 | `SET statement_timeout = '15s'` na função | consulta que trava (CTE recursiva, produto cartesiano) não segura a Edge Function |
+| 4 | `SET statement_timeout = '15s'` na função | consulta que trava (produto cartesiano, agregação sobre CTE recursiva) não segura a Edge Function |
+| 5 | blocklist de comandos ganha `merge`, `call` | defesa em profundidade (rev-seguranca F2) — `WITH (MERGE …)` já falhava na execução, mas erro mais claro |
 
-Corpo base: a versão da F1 aplicada em produção em 03/09/2026.
+`f2_nucleo.sql` **recria a função por completo** e passa a ser a fonte de verdade do corpo
+de `executar_consulta_ia` — o `f1_seguranca.sql` **não** deve ser re-aplicado (ver
+`sql/assistente/LEIA-ME.md`). Corpo base: a versão da F1 em produção (03/09/2026), guardas
+de segurança reproduzidas byte-a-byte.
 
 ### 2. Edge Function — `supabase/functions/gecope-assistant/`
 
 - **`guards.ts` (novo)** — `validarSqlGeminiOuFalhar`, `limparSql`,
   `interpretarRespostaModelo`, `FUNCOES_OK` extraídos de `index.ts` para serem
-  **testáveis** (o `index.ts` chama `Deno.serve` no load). `index.ts` importa de lá.
-- **`guards_test.ts` (novo)** — `deno test`: 16 ataques barram, 10 consultas legítimas
-  passam, `limparSql` e `interpretarRespostaModelo` cobertos.
+  **testáveis** (o `index.ts` chama `Deno.serve` no load). `index.ts` importa de lá. Vs. a
+  versão inline da F1, muda: `^select` → `^(select|with)` e blocklist ganha `merge`/`call`.
+  `FUNCOES_OK` espelha `funcoes_ok` do `f2_nucleo.sql` (mesma lista; sem `'with'`, que era
+  token morto).
+- **`guards_test.ts` (novo)** — `deno test supabase/functions/gecope-assistant/guards_test.ts`:
+  16 ataques barram, 12 consultas legítimas passam, `limparSql` e
+  `interpretarRespostaModelo` cobertos. (deno não está instalado nesta máquina;
+  sanity-check via node feito — 28/28.)
 - **`index.ts` — cadeia de fallback de modelo**:
   `GEMINI_MODELOS = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]`
   (IDs conferidos em ai.google.dev/gemini-api/docs/models, set/2026). `gerarSqlComGemini`
-  percorre a cadeia: `503` → backoff `1200ms`, `2400ms`, 2 tentativas no mesmo modelo,
-  depois próximo; `404`/`400` → próximo modelo direto; rede/`401`/`429`/`500` → próximo.
-  Todos falharam → lança.
+  percorre a cadeia: `503` → 1 retry no mesmo modelo (`sleep 1000ms`) → próximo;
+  `404`/`400` → próximo direto; rede/timeout/`401`/`429`/`500` → próximo. **Teto de 9s
+  por requisição** (`AbortController` — `fetch` do Deno não tem timeout) e **~24s no
+  caminho inteiro** (`prazoFinal`). Tudo falhou → lança.
 - **`index.ts` — saneamento**: `interpretarRespostaModelo` tolera cerca de markdown
   (```` ```json ````), SQL cru sem JSON, `;` final. `limparSql` remove cercas e `;`.
 - **`index.ts` — degradação**: falha na cadeia de modelos, no `validarSqlGeminiOuFalhar`
-  ou na execução → resposta `origem: "degradado"`, `200`, mensagem "Não consegui
-  responder… tente reformular ou use uma sugestão." Logada `sucesso: false`,
-  `origem: "gemini_degradado"`. Nunca erro cru, nunca número inventado.
-- **`index.ts` — log**: o `catch` externo passa a gravar `origem: "erro"` (era `"gemini"`,
-  enganoso) — só erro inesperado cai lá.
+  ou na execução → resposta `origem: "degradado"`, `200`, **uma só mensagem** (`MSG_DEGRADADO`,
+  sem a palavra "segurança"). Logada `sucesso: false`, `origem: "gemini_degradado"` via
+  `logSeguro` (best-effort — falha no `insert` do log **não** derruba a resposta). Nunca
+  erro cru, nunca número inventado.
+- **`index.ts` — log**: o `catch` externo grava `origem: "erro"` (era `"gemini"`); todos
+  os `insert` do log passam por `logSeguro`.
+- **`index.ts` — `formatarResultado`**: quando o resultado tem exatamente 200 ou 500
+  linhas (= cap interno/externo atingido), o cabeçalho diz "Mais de N resultados (limite
+  do sistema — refine…)" em vez de "N resultado(s) encontrado(s)" — não apresentar o cap
+  como contagem exata. (Contadores honestos de verdade: F5/F6, FU-13/FU-35.)
 - **`schema_prompt.ts`**: "Sempre inclua LIMIT 200" → "**NÃO inclua LIMIT nem OFFSET** — o
   sistema aplica um limite automaticamente" (LIMIT só para "top N" explícito). Também
   cita `WITH ... SELECT` como forma válida.
@@ -69,13 +84,15 @@ Corpo base: a versão da F1 aplicada em produção em 03/09/2026.
 | B | `executar_consulta_ia('select descricao_obra from contratos_edificacao')` (sem limit) | 200 linhas |
 | C | `executar_consulta_ia` com `WITH x AS (…) SELECT …` | retorna linhas |
 | D | `executar_consulta_ia('select schema_to_xml(''net'',true,false,'''')')` | ERRO "Função não permitida" (segurança F1 intacta) |
-| E | `executar_consulta_ia` com CTE recursiva infinita | erro de timeout em ~15 s |
+| D2 | `executar_consulta_ia` com `with x as (delete … returning 1) select * from x` | ERRO "Comando não permitido" |
+| E | `executar_consulta_ia` com CTE recursiva infinita + `select count(*) from r` (força avaliação completa — só `LIMIT` seria curto-circuitado) | ERRO `57014` (timeout) em ~15 s |
 
 ### Edge Function
+Rodar de dentro de `supabase/functions/gecope-assistant/`:
 | # | Verificação | Esperado |
 |---|---|---|
-| F | `deno test supabase/functions/gecope-assistant/guards_test.ts` | todos passam |
-| G | `deno check supabase/functions/gecope-assistant/index.ts` | compila |
+| F | `deno test guards_test.ts` | todos passam (não há `deno.json`/CI ainda — rodar à mão; ver follow-up) |
+| G | `deno check index.ts` | compila |
 | H | `GET https://generativelanguage.googleapis.com/v1beta/models` com a `GEMINI_API_KEY` | os 3 IDs de `GEMINI_MODELOS` aparecem e suportam `generateContent` |
 | I | pergunta livre real após deploy (ex.: "quantos contratos por distrito?") | responde com número real (não `42601`, não "Nenhum resultado") |
 | J | derrubar o 1º modelo (ID inválido temporário) | cai no 2º; resposta normal; log registra o fallback |

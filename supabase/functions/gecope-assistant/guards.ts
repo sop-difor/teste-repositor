@@ -13,7 +13,7 @@ export const FUNCOES_OK = new Set([
   "values","case","when","by","all","any","some","using","as","into","distinct",
   "order","group","having","limit","offset","union","intersect","except","join",
   "cross","inner","left","right","full","outer","natural","lateral","within",
-  "returning","partition","rows","range","between","ilike","like","similar","with",
+  "returning","partition","rows","range","between","ilike","like","similar",
   "count","sum","avg","min","max","stddev","stddev_pop","stddev_samp","variance",
   "var_pop","var_samp","corr","mode","percentile_cont","percentile_disc",
   "row_number","rank","dense_rank","percent_rank","cume_dist","ntile","lag","lead",
@@ -50,7 +50,7 @@ export function validarSqlGeminiOuFalhar(sql: string): void {
   if (!/^\s*(select|with)\s/i.test(s)) {
     throw new Error("Consulta gerada não começa com SELECT/WITH — bloqueada.");
   }
-  if (/\b(insert|update|delete|drop|alter|truncate|grant|revoke|create)\b/i.test(s)) {
+  if (/\b(insert|update|delete|drop|alter|truncate|grant|revoke|create|merge|call)\b/i.test(s)) {
     throw new Error("Comando não permitido detectado na consulta gerada — bloqueada.");
   }
   if (/;\s*\S/.test(s)) {

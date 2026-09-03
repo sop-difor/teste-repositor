@@ -2,7 +2,17 @@
 -- F2 — Núcleo determinístico do Assistente: corrige o bug do LIMIT duplicado
 -- ============================================================================
 -- Projeto: qexdnxqmiaarzwwwrcor (PRODUÇÃO). Aplicar no SQL Editor. Idempotente.
--- Depende da F1 já aplicada (sql/assistente/f1_seguranca.sql).
+--
+-- >>> ESTA MIGRAÇÃO RECRIA executar_consulta_ia POR COMPLETO. Substitui o corpo
+--     da F1 (sql/assistente/f1_seguranca.sql). A partir de agora, ESTE arquivo é
+--     a fonte de verdade da função — NÃO re-aplicar o f1_seguranca.sql depois
+--     (regride: bug do LIMIT de volta, perde statement_timeout, perde WITH,
+--     perde o cap externo). Ver sql/assistente/LEIA-ME.md.
+--     As guardas de segurança da F1 estão TODAS reproduzidas aqui, sem alteração.
+-- <<<
+--
+-- Depende da F1 já aplicada (grants/policies/RLS — o f1_seguranca.sql faz isso;
+-- create-or-replace preserva ACL, então os REVOKE da F1 continuam valendo).
 --
 -- Bug (diagnóstico da F0, confirmado ao vivo na F1):
 --   O guard 'if sql_consulta !~* ''\blimit\s+\d+'' then ... || '' limit 200'''
@@ -34,12 +44,15 @@ set search_path to 'public'
 set statement_timeout to '15s'   -- F2
 as $function$
 declare
+  -- ALLOWLIST de nomes que podem aparecer como 'nome(' (default-deny).
+  -- ESPELHADA em supabase/functions/gecope-assistant/guards.ts (FUNCOES_OK) —
+  -- manter as duas em sincronia ao editar.
   funcoes_ok text[] := array[
     'select','from','where','and','or','not','in','exists','on','over','filter',
     'values','case','when','by','all','any','some','using','as','into','distinct',
     'order','group','having','limit','offset','union','intersect','except','join',
     'cross','inner','left','right','full','outer','natural','lateral','within',
-    'returning','partition','rows','range','between','ilike','like','similar','with',
+    'returning','partition','rows','range','between','ilike','like','similar',
     'count','sum','avg','min','max','stddev','stddev_pop','stddev_samp','variance',
     'var_pop','var_samp','corr','mode','percentile_cont','percentile_disc',
     'row_number','rank','dense_rank','percent_rank','cume_dist','ntile','lag','lead',
@@ -78,8 +91,10 @@ begin
     raise exception 'Apenas consultas SELECT (ou WITH ... SELECT) são permitidas';
   end if;
 
-  -- F1: blocklist de comandos (\y = borda de palavra).
-  if sql_consulta ~* '\y(insert|update|delete|drop|alter|truncate|grant|revoke|create)\y' then
+  -- F1: blocklist de comandos (\y = borda de palavra). F2: +merge/call (defesa
+  -- em profundidade — data-modifying CTE já é barrada pela execução, mas erro
+  -- mais claro e sem depender disso).
+  if sql_consulta ~* '\y(insert|update|delete|drop|alter|truncate|grant|revoke|create|merge|call)\y' then
     raise exception 'Comando não permitido detectado na consulta';
   end if;
 
@@ -132,6 +147,14 @@ grant  execute on function public.executar_consulta_ia(text) to service_role;
 commit;
 
 -- ============================================================================
+-- ROLLBACK (reverter a F2, voltando ao comportamento da F1)
+-- ============================================================================
+-- Reaplicar o corpo da F1 (sql/assistente/f1_seguranca.sql, seção "B) + C)") —
+-- volta '\y'→'\b' no guard de LIMIT (bug de volta), tira o cap externo, o WITH
+-- e o statement_timeout. Os grants/policies/RLS da F1 continuam (create-or-replace
+-- não os toca). A Edge Function reverte por redeploy da v12 (git 782e86c).
+
+-- ============================================================================
 -- VERIFICAÇÃO (rodar separado)
 -- ============================================================================
 -- A) LIMIT explícito NÃO quebra mais (era 42601):
@@ -144,5 +167,7 @@ commit;
 -- D) segurança da F1 intacta (devem ERRAR):
 -- select * from executar_consulta_ia($$select schema_to_xml('net',true,false,'')$$);                 -- "Função não permitida"
 -- select * from executar_consulta_ia($$select 1 from net._http_response$$);                          -- "schema fora de public"
--- E) timeout:
--- select * from executar_consulta_ia($$with recursive r(n) as (select 1 union all select n+1 from r) select n from r$$);  -- erro de timeout em ~15s
+-- select * from executar_consulta_ia($$with x as (delete from processos returning 1) select * from x$$); -- "Comando não permitido"
+-- E) timeout: a CTE recursiva com LIMIT é curto-circuitada (retorna 500 rápido);
+--    para exercitar o statement_timeout, forçar avaliação completa com count(*):
+-- select * from executar_consulta_ia($$with recursive r(n) as (select 1 union all select n+1 from r) select count(*) from r$$);  -- erro 57014 (timeout) em ~15s

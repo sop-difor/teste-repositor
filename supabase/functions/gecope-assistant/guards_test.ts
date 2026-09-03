@@ -4,7 +4,7 @@
 // Cobre: validarSqlGeminiOuFalhar (ataques barram, consultas legítimas passam),
 // limparSql, interpretarRespostaModelo.
 
-import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
+import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import {
   validarSqlGeminiOuFalhar,
   limparSql,
@@ -27,6 +27,8 @@ const ataques: [string, string][] = [
   ["pg_ não-qualificado", "select relname from pg_class"],
   ["multi-instrução", "select 1; drop table x"],
   ["não-select", "update processos set fiscal = 'x'"],
+  ["merge em CTE", "with x as (merge into processos t using p on true when matched then delete) select 1"],
+  ["call", "call algum_proc()"],
   ["função fora da allowlist", "select pg_sleep(10)"],
   ["generate_series", "select generate_series(1, 1000000)"],
 ];

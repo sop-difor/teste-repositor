@@ -1,6 +1,14 @@
 -- ============================================================================
 -- F1 — Blindagem de segurança do Assistente de Dados do GECOPE
 -- ============================================================================
+--
+-- >>> APLICADO EM PRODUÇÃO 03/09/2026. O corpo de executar_consulta_ia definido
+--     AQUI foi SUBSTITUÍDO pela F2 (sql/assistente/f2_nucleo.sql, tb aplicada
+--     03/09/2026). NÃO re-executar este arquivo — regride o bug do LIMIT e perde
+--     as melhorias da F2. Este arquivo fica só como histórico dos REVOKE/grants/
+--     policies/RLS (que a F2 não repete e não precisa repetir). Ver LEIA-ME.md.
+-- <<<
+--
 -- Projeto: qexdnxqmiaarzwwwrcor (PRODUÇÃO)
 -- Aplicar manualmente no SQL Editor do Supabase. Idempotente. Transacional.
 -- Depois de aplicar: rodar o BLOCO DE VERIFICAÇÃO ao final (fora da transação).

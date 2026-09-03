@@ -51,8 +51,9 @@ devolverem `APROVADO`. `BLOQUEADO` volta para correção na mesma fase. Duas rod
 |---|---|
 | F0 | **concluída** — 4/4 revisores `APROVADO` ([`fase-0-revisao.md`](fase-0-revisao.md)) |
 | F1 | **concluída** — 4/4 `APROVADO`, `.sql` aplicado em produção 03/09/2026 ([`fase-1-revisao.md`](fase-1-revisao.md)). Pendências não-bloqueantes: deploy da Edge Function, chamado Supabase (`REVOKE … FROM PUBLIC` no `net`) |
-| F2 | **em revisão** — núcleo determinístico ([`fase-2-nucleo.md`](fase-2-nucleo.md)): bug do `LIMIT` duplicado, cadeia de fallback de modelo, saneamento, degradação, testes |
-| F3–F8 | não iniciadas |
+| F2 | **pronta** — 4/4 `APROVADO` ([`fase-2-revisao.md`](fase-2-revisao.md)). Aguarda usuário aplicar `f2_nucleo.sql` + **um** deploy da Edge Function (cobre F1+F2) |
+| F3 | próxima — harness de avaliação (40–60 perguntas + gabarito + metas) |
+| F4–F8 | não iniciadas |
 
 ## Diagnóstico que motivou a iniciativa (03/09/2026)
 
