@@ -50,7 +50,7 @@ devolverem `APROVADO`. `BLOQUEADO` volta para correção na mesma fase. Duas rod
 | Fase | Situação |
 |---|---|
 | F0 | **concluída** — 4/4 revisores `APROVADO` ([`fase-0-revisao.md`](fase-0-revisao.md)) |
-| F1 | próxima — blindagem de segurança (sign-off do usuário) |
+| F1 | **em revisão** — blindagem de segurança ([`fase-1-seguranca.md`](fase-1-seguranca.md)); encerra com sign-off do usuário |
 | F2–F8 | não iniciadas |
 
 ## Diagnóstico que motivou a iniciativa (03/09/2026)

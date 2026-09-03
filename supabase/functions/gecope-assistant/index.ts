@@ -2,6 +2,8 @@
 // Ponto de entrada único do assistente de dados do GECOPE.
 //
 // Fluxo:
+//   0. Autentica: exige JWT de usuário real (auth.getUser); "usuario" vem do
+//      token, nunca do corpo. Aplica rate limit por usuário.  [F1]
 //   1. Tenta o motor de intenções (regras, rápido, sem custo)
 //   2. Se não bater nenhuma intenção, cai no Gemini (gera SQL, valida, executa)
 //   3. Grava tudo em consultas_ia_log, sempre
@@ -16,6 +18,8 @@
 //
 // Secrets necessários (já configurados): GEMINI_API_KEY
 // Secrets automáticos do Supabase: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+// verify_jwt: true (painel) — mantém; a checagem de auth.getUser aqui é
+//   necessária porque a anon key também é um JWT que passa no verify_jwt.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { tentarIntencao, type DadosGrafico } from "./motor_intencoes.ts";
@@ -60,6 +64,16 @@ function validarSqlGeminiOuFalhar(sql: string): void {
   }
   if (/;\s*\S/.test(sqlLimpo)) {
     throw new Error("Mais de uma instrução detectada — bloqueada.");
+  }
+  // F1: espelha a guarda de schema da função executar_consulta_ia — nenhuma
+  // referência explícita a schema fora de 'public'. A role gecope_ia_readonly
+  // tem USAGE em 'net' (herdado de PUBLIC) e net._http_response pode conter
+  // tokens de chamadas HTTP de saída.
+  if (/\b(net|cron|extensions|auth|storage|vault|graphql|graphql_public|realtime|pgsodium|pgbouncer|pg_catalog|pg_temp|information_schema|supabase_migrations|supabase_functions)\s*\./i.test(sqlLimpo)) {
+    throw new Error("Consulta gerada referencia schema fora de public — bloqueada.");
+  }
+  if (/\bpg_[a-z0-9_]+\s*\./i.test(sqlLimpo)) {
+    throw new Error("Consulta gerada referencia catálogo do sistema — bloqueada.");
   }
 }
 
@@ -167,6 +181,28 @@ function formatarResultado(linhas: Record<string, unknown>[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// Limite de perguntas por usuário numa janela de tempo. Aproximado (conta o
+// que já foi gravado em consultas_ia_log) — suficiente para um piloto interno.
+// ---------------------------------------------------------------------------
+const RATE_LIMITE_JANELA_MIN = 60;
+const RATE_LIMITE_MAX = 40;
+
+async function limiteExcedido(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  usuario: string
+): Promise<boolean> {
+  const desde = new Date(Date.now() - RATE_LIMITE_JANELA_MIN * 60_000).toISOString();
+  const { count, error } = await supabase
+    .from("consultas_ia_log")
+    .select("*", { count: "exact", head: true })
+    .eq("usuario", usuario)
+    .gte("created_at", desde);
+  if (error) return false; // na dúvida, não bloqueia o usuário por falha nossa
+  return (count ?? 0) >= RATE_LIMITE_MAX;
+}
+
+// ---------------------------------------------------------------------------
 // Handler principal
 // ---------------------------------------------------------------------------
 Deno.serve(async (req: Request) => {
@@ -182,16 +218,48 @@ Deno.serve(async (req: Request) => {
   let pergunta = "";
   let usuario = "desconhecido";
 
+  // ---- 0. Autenticação: exige JWT de usuário real do GECOPE ----
+  // verify_jwt=true no painel já rejeita requisição sem Bearer válido, mas a
+  // anon key TAMBÉM é um JWT válido — então validamos aqui que o token é de um
+  // usuário de verdade (auth.getUser), e derivamos "usuario" do token, nunca
+  // do corpo. Mesmo padrão da função approve-user.
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization") ?? "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) {
+    return new Response(
+      JSON.stringify({ resposta: "Faça login no GECOPE para usar o assistente.", origem: "erro" }),
+      { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    );
+  }
+  const { data: { user }, error: erroAuth } = await supabase.auth.getUser(token);
+  if (erroAuth || !user) {
+    return new Response(
+      JSON.stringify({ resposta: "Sessão inválida ou expirada. Entre no GECOPE novamente.", origem: "erro" }),
+      { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    );
+  }
+  usuario = user.email ?? user.id;
+
   try {
     const corpo = await req.json();
     pergunta = (corpo.pergunta ?? "").trim();
-    usuario = corpo.usuario ?? "desconhecido";
 
     if (!pergunta) {
       return new Response(JSON.stringify({ erro: "Campo 'pergunta' é obrigatório." }), {
         status: 400,
         headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
       });
+    }
+
+    // ---- 0b. Rate limit por usuário ----
+    if (await limiteExcedido(supabase, usuario)) {
+      return new Response(
+        JSON.stringify({
+          resposta: `Você fez muitas perguntas na última hora (limite de ${RATE_LIMITE_MAX}). Tente de novo daqui a pouco.`,
+          origem: "erro",
+        }),
+        { status: 429, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
     }
 
     // ---- 1. Tenta o motor de intenções primeiro (rápido, sem custo) ----

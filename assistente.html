@@ -8,6 +8,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- Supabase: mesmo cliente/sessão do restante do GECOPE (config.js define URL/chave,
+     database.js inicializa window.sbClient reaproveitando a sessão já autenticada).
+     A integração completa (link no index.html, tema unificado) é a F8; a F1 só faz o
+     assistente exigir uma sessão real do GECOPE em vez da anon key crua. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="database.js"></script>
 <style>
   :root {
     --bg-page: #ffffff;
@@ -377,14 +384,30 @@
 
 <script>
   // ---------------------------------------------------------------------
-  // CONFIGURAÇÃO — preencher antes de publicar
+  // CONFIGURAÇÃO — URL e anon key vêm de config.js (window.SUPABASE_URL /
+  // window.SUPABASE_KEY), as mesmas do resto do GECOPE. A anon key só é usada
+  // no header `apikey` (exigido pelo gateway); a identidade de quem pergunta
+  // vai no `Authorization: Bearer <access_token>` da sessão real — a Edge
+  // Function valida com auth.getUser e deriva o usuário do token.  [F1]
   // ---------------------------------------------------------------------
-  const SUPABASE_URL = "https://qexdnxqmiaarzwwwrcor.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleGRueHFtaWFhcnp3d3dyY29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4NDYyNDUsImV4cCI6MjA4NTQyMjI0NX0.RJnLpsXMMzzhcq_YKHI7wObBqubKgdltauvBvGpz4dc";
+  const SUPABASE_URL = window.SUPABASE_URL;
+  const SUPABASE_ANON_KEY = window.SUPABASE_KEY;
   const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/gecope-assistant`;
 
-  function obterUsuarioAtual() {
-    return window.currentUser?.nome ?? "gestor_gecope";
+  // Token de acesso da sessão atual do GECOPE. Sem sessão → null (a UI bloqueia
+  // a entrada e mostra o aviso de login). Espera o database.js inicializar o
+  // window.sbClient (mesmo padrão de carregamento do resto do GECOPE).
+  async function obterTokenSessao() {
+    try {
+      for (let i = 0; i < 20 && !window.sbClient; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (!window.sbClient) return null;
+      const { data } = await window.sbClient.auth.getSession();
+      return data?.session?.access_token ?? null;
+    } catch {
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -458,6 +481,25 @@
   sugestoes.addEventListener("click", (e) => {
     if (e.target.classList.contains("chip")) enviarPergunta(e.target.textContent);
   });
+
+  // ---------------------------------------------------------------------
+  // F1: porta de sessão. Sem sessão do GECOPE, o assistente não funciona —
+  // desabilita a entrada e explica. A integração plena (redirecionar para o
+  // login, herdar o nome do usuário no cabeçalho) é a F8.
+  // ---------------------------------------------------------------------
+  (async function portaDeSessao() {
+    const token = await obterTokenSessao();
+    if (token) return; // ok, tem sessão
+    campoTexto.disabled = true;
+    campoTexto.placeholder = "Entre no GECOPE para usar o assistente";
+    btnEnviar.disabled = true;
+    const alvo = document.getElementById("saudacaoVazio");
+    if (alvo) {
+      alvo.textContent = "Entre no GECOPE para continuar";
+      const p = alvo.nextElementSibling;
+      if (p) p.innerHTML = 'Abra o <a href="index.html" style="color:var(--accent)">Painel Principal</a>, faça login e volte a esta página.';
+    }
+  })();
 
   function adicionarTurnoUsuario(texto) {
     if (estadoVazio) estadoVazio.remove();
@@ -579,6 +621,17 @@
     const texto = textoOriginal.trim();
     if (!texto) return;
 
+    // F1: sem sessão do GECOPE, não há a quem atribuir a pergunta nem token
+    // para a Edge Function validar. Bloqueia antes de mostrar o turno.
+    const token = await obterTokenSessao();
+    if (!token) {
+      adicionarTurnoAssistente(
+        "Entre no GECOPE para usar o assistente. Abra o Painel Principal, faça login e volte aqui.",
+        { erro: true }
+      );
+      return;
+    }
+
     campoTexto.value = "";
     campoTexto.style.height = "auto";
     btnEnviar.disabled = true;
@@ -599,10 +652,11 @@
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "Authorization": `Bearer ${token}`,
           "apikey": SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ pergunta: perguntaParaEnviar, usuario: obterUsuarioAtual() }),
+        // F1: "usuario" não vai mais no corpo — a Edge Function deriva do token.
+        body: JSON.stringify({ pergunta: perguntaParaEnviar }),
       });
 
       const dados = await resposta.json();

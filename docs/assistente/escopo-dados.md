@@ -78,3 +78,15 @@ e recebem `GRANT SELECT` para `gecope_ia_readonly` quando criadas.
 
 Qualquer proposta de ampliar o escopo passa por: atualizar este documento → `GRANT SELECT`
 → atualizar `schema_dicionario.md` e `schema_prompt.ts` → nova rodada dos 4 revisores.
+
+## Dado pessoal e o log de perguntas (LGPD)
+
+`consultas_ia_log` registra o **texto da pergunta**, que pode conter nome de fiscal,
+analista ou outra pessoa. Controles (F1):
+
+- RLS **on**; só o `service_role` (a Edge Function) lê e grava. Nenhum usuário nem admin
+  lê pela API.
+- `usuario` no log = e-mail da sessão, derivado do JWT (não do corpo da requisição).
+- Retenção: purga de registros com mais de **180 dias** — job `pg_cron` na F7.
+- O texto da pergunta **é** enviado ao provedor LLM (junto do schema, nunca linhas do
+  banco) — ver [`provedor-llm.md`](provedor-llm.md).
