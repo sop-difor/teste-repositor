@@ -8,12 +8,15 @@ contexto limpo, em paralelo, sobre o commit `782e86c`.
 | Lente | Rodada 1 | Rodada 2 |
 |---|---|---|
 | `rev-seguranca` | **APROVADO** | — |
-| `rev-correcao` | **BLOQUEADO** | _(re-submissão após correção)_ |
+| `rev-correcao` | **BLOQUEADO** | **APROVADO** (commit `0683e4f`) |
 | `rev-produto` | **APROVADO** | — |
 | `rev-aderencia` | **APROVADO** | — |
 
 `rev-correcao` e `rev-aderencia` caíram por erro de conexão (ECONNRESET) na primeira
 tentativa e foram re-disparados; os vereditos acima são das execuções válidas.
+
+**F0 LIBERADA** — 4/4 `APROVADO` após a rodada de correção. Sem sign-off de usuário na F0
+(só F1 e F8).
 
 ## Achado bloqueante (rev-correcao, rodada 1) — RESOLVIDO
 
@@ -58,7 +61,7 @@ correção para a F2. Re-submetido ao `rev-correcao`.
 |---|---|---|
 | FU-8 | Rótulo de confiança na UI está invertido: "análise gerada" (LLM) soa melhor que "resposta imediata" (intenção). O terreno firme deve comunicar verificação; o LLM, cautela literal ("resposta gerada — confira antes de usar") | F6 (critério de aceite) |
 | FU-9 | "Confira" apoiado só no SQL cru é fraco — gestor/fiscal não lê SQL. Acompanhar de reformulação em linguagem natural do que foi consultado + contagem de linhas | F6 |
-| FU-10 | Nenhuma das 19 intenções é drill-down de contrato único ("como está o contrato 123?", "aditivos do contrato X", "medições do contrato X", "checklist do processo X") — padrão que não emerge do log sozinho | F5 (garantir a família) |
+| FU-10 | Nenhuma das 20 intenções é drill-down de contrato único ("como está o contrato 123?", "aditivos do contrato X", "medições do contrato X", "checklist do processo X") — padrão que não emerge do log sozinho | F5 (garantir a família) |
 | FU-11 | `medicoes`, `checklist_documentacao_aditivo`, `curva_abc_*` estão no escopo mas sem nenhuma intenção. "Medições pendentes", "obra sem medir há N meses", "processos parados há mais de X dias" são perguntas diárias | F5 (priorizar explicitamente) |
 | FU-12 | Perguntas com recorte de identidade ("quais obras eu fiscalizo?", "meus contratos") ficam viáveis com `usuario` do JWT (F1) + `comissao_fiscalizacao` no escopo | F5 (candidato) |
 | FU-13 | Listas truncadas em `.slice(0, 10)` sem avisar que são parciais ("40 contratos vencem" + 10 linhas parece lista completa) | F2/F5 — mostrar "(10 primeiros de 40)"; lente rev-produto ganha "honestidade de truncamento" |
@@ -81,6 +84,7 @@ correção para a F2. Re-submetido ao `rev-correcao`.
 |---|---|---|
 | FU-21 | Log tem 1 registro `erro = "[object Object]"` (12:45) apesar de `paraTextoSeguro` | F2/F6 — verificar se chega ao usuário |
 | FU-22 | `schema_prompt.ts:98` usa `curva_abc_versoes.id` mas a lista de colunas (linha 81) não mostra `id` | F6 — quando o prompt for retrabalhado |
+| FU-23 | Comentário `// As 19 intenções confirmadas` em `motor_intencoes.ts:187` — o array tem **20** entradas (achado da re-submissão do rev-correcao). Docs já corrigidos para 20; o comentário no código fica para a F5 (F0 não altera código) | F5 |
 
 ## Confirmações das 4 lentes (o que passou)
 
@@ -107,7 +111,19 @@ correção para a F2. Re-submetido ao `rev-correcao`.
   (`.sql` avulso → `sql/_aplicados/`) alinhado; arquivos no lugar certo; `provedor-llm.md`
   codifica o padrão de comentário datado que já está no `index.ts`.
 
+## Rodada 2 — `rev-correcao` sobre o commit `0683e4f`
+
+**VEREDITO: APROVADO.** Achado bloqueante resolvido e verificado ao vivo (`\b`=backspace
+confirmado no Postgres; `... limit 200 limit 200` reproduz o `42601`; README aponta a raiz,
+não a limpeza de `;`). Sem regressão de correção nas demais edições de `0683e4f`.
+
+Dois follow-ups cosméticos, corrigidos no commit seguinte:
+- FU-24: README dizia "3 causas independentes" com 4 itens listados → reescrito para
+  "três causas de falha (1–3) e uma falha isolada de tratamento de erro (4)".
+- FU-25: README/revisao diziam "19 intenções" → o array tem **20** → corrigido em todos os
+  documentos (código: FU-23, F5).
+
 ## Situação
 
-F0 **não liberada** até `rev-correcao` devolver `APROVADO` na re-submissão. Follow-ups
-FU-8..FU-22 rastreados para as fases indicadas.
+**F0 CONCLUÍDA.** 4/4 `APROVADO`. Follow-ups FU-8..FU-25 rastreados para as fases
+indicadas. Próxima: **F1 — Blindagem de segurança** (com sign-off do usuário).

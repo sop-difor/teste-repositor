@@ -40,7 +40,7 @@ devolverem `APROVADO`. `BLOQUEADO` volta para correção na mesma fase. Duas rod
 | **F2** | Núcleo determinístico | Corrigir bug do `limit`; retry/backoff; fallback de modelo; sanitização; testes | — |
 | **F3** | Harness de avaliação | 40–60 perguntas com gabarito à mão + script + metas | — |
 | **F4** | Views largas para Q&A | 1–2 views desnormalizadas (contrato+obra+ficha+fiscal+distrito) | — |
-| **F5** | Expandir motor de intenções | De 19 para ~40–60 perguntas, guiado pelo log | — |
+| **F5** | Expandir motor de intenções | De 20 para ~40–60 perguntas, guiado pelo log | — |
 | **F6** | LLM + prompt | `gerarSql()` isolado; prompt com as views largas; exibir SQL; marcar confiança; degradar para sugestões | — |
 | **F7** | Feedback + observabilidade | 👍/👎 + campo veredito no log; painel de uso/falhas; rotina "falha → intenção ou caso de eval" | — |
 | **F8** | Integração + piloto | `assistente.html` atrás da auth do GECOPE; liberar para o piloto | **sim** |
@@ -49,8 +49,9 @@ devolverem `APROVADO`. `BLOQUEADO` volta para correção na mesma fase. Duas rod
 
 | Fase | Situação |
 |---|---|
-| F0 | **em revisão** |
-| F1–F8 | não iniciadas |
+| F0 | **concluída** — 4/4 revisores `APROVADO` ([`fase-0-revisao.md`](fase-0-revisao.md)) |
+| F1 | próxima — blindagem de segurança (sign-off do usuário) |
+| F2–F8 | não iniciadas |
 
 ## Diagnóstico que motivou a iniciativa (03/09/2026)
 
@@ -58,9 +59,10 @@ Primeiro dia de teste real: 1 usuário, 25 perguntas, 14 falhas (11 sucessos). D
 falhas: 3× HTTP 404, 4× HTTP 503, 6× erro `42601` da família `limit`, 1× `[object Object]`.
 
 - Motor de intenções: **todas as perguntas do teste que bateram uma intenção foram
-  respondidas corretamente**. É a parte sólida. (Hoje são 19 intenções definidas; a F5
-  leva a ~40–60.)
-- Caminho LLM: praticamente inoperante, por 3 causas independentes:
+  respondidas corretamente**. É a parte sólida. (Hoje são 20 intenções definidas —
+  `motor_intencoes.ts`; a F5 leva a ~40–60.)
+- Caminho LLM: praticamente inoperante. Três causas independentes de falha (1–3) e uma
+  falha isolada de tratamento de erro (4):
   1. Modelo `gemini-2.5-flash` **descontinuado** (HTTP 404, "no longer available to new
      users") — o código já foi alterado para outro ID, mas sem cadeia de fallback nem
      verificação.
