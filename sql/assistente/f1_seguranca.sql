@@ -243,7 +243,10 @@ commit;
 -- select * from executar_consulta_ia($$select 1 from net/*/**/*/._http_response$$);          -- idem (comentário aninhado)
 -- select * from executar_consulta_ia($$select 1 where 'x'='--' union select 1 from net._http_response$$); -- idem (-- em literal)
 -- select * from executar_consulta_ia($$select 1 from pg_roles$$);                            -- "catálogo do sistema"
--- select * from executar_consulta_ia($$select current_setting('is_superuser')$$);            -- "Função não permitida"
+-- select * from executar_consulta_ia($$select current_setting('is_superuser')$$);            -- "Função não permitida: current_setting"
+-- select * from executar_consulta_ia($$select schema_to_xml('net', true, false, '')$$);      -- "Função não permitida: schema_to_xml"
+-- select * from executar_consulta_ia($$select database_to_xml(true,false,'')$$);             -- "Função não permitida: database_to_xml"
+-- select * from executar_consulta_ia($$select query_to_xml('select 1 from net._http_response',true,false,'')$$); -- "Função não permitida: query_to_xml"
 -- select * from executar_consulta_ia($$select 1; drop table x$$);                            -- "mais de uma instrução" / "Comando não permitido"
 --
 -- 3) consulta legítima (deve RETORNAR o número real, > 0):
