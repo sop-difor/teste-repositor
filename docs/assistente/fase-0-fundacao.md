@@ -37,9 +37,12 @@ comportamento do assistente, nenhuma alteração de banco, nenhum deploy.
 
 ## O que a F0 NÃO faz (é fase futura)
 
-- Corrigir o bug do `limit` → F2.
+- Corrigir o bug do `LIMIT` duplicado (guard `\b` em vez de `\y`) → F2.
 - Fixar IDs de modelo Gemini e a cadeia de fallback no código → F2/F6.
-- Qualquer `GRANT` / `REVOKE` / RLS / JWT / rate limit → F1.
+- Qualquer `GRANT` / `REVOKE` / RLS / JWT / rate limit → F1. Inclui, além do
+  `REVOKE EXECUTE ON executar_consulta_ia FROM anon, authenticated`: enumerar **tudo** que
+  `gecope_ia_readonly` lê em **todos os schemas** e dar `REVOKE SELECT ... FROM PUBLIC` em
+  `net.*`, `extensions.pg_stat_statements*`, `cron.*` (ver ressalva em `escopo-dados.md`).
 - Criar views largas → F4.
 - Tocar em `index.html` ou na autenticação → F8.
 
@@ -53,12 +56,22 @@ comportamento do assistente, nenhuma alteração de banco, nenhum deploy.
 | 4 | `diff -r ../gecope-assistente/supabase/functions/gecope-assistant supabase/functions/gecope-assistant` (ignorando `schema_dicionario.md`, movido para `docs/`) | Sem diferenças — o código foi movido, não alterado |
 | 5 | Ler `escopo-dados.md` × `information_schema.role_table_grants` para `gecope_ia_readonly` | As duas listas de 13 objetos coincidem |
 | 6 | Buscar segredos no diff (`GEMINI_API_KEY`, `service_role`, chaves privadas) | Nenhum. A `SUPABASE_ANON_KEY` em `assistente.html` já é pública (está em `config.js`) e é substituída na F1/F8 pelo fluxo de sessão |
-| 7 | `deno check supabase/functions/gecope-assistant/index.ts` | Compila (código inalterado, era o que já rodava publicado) |
+| 7 | Verificação de compilação | `deno` **não está instalado** nesta máquina. O código é byte a byte o da Edge Function publicada (v12), que compila e roda em produção. `deno check` fica como item de ambiente para a F2, quando o código passa a ser alterado |
 
 ## Riscos conhecidos que a F0 deixa para depois (não são bloqueios da F0)
 
 - `assistente.html` ainda embute a `SUPABASE_ANON_KEY` e manda `usuario` do corpo — some
   na F1/F8.
-- `supabase/functions/gecope-assistant/index.ts` ainda tem `GEMINI_MODEL` fixo e o bug do
-  `limit` na função do banco — F2.
+- `supabase/functions/gecope-assistant/index.ts` ainda tem `GEMINI_MODEL` fixo; a função
+  do banco tem o bug do `LIMIT` duplicado — F2.
+- **Tema fora do padrão do GECOPE.** `assistente.html` usa `CHAVE_TEMA = "gecope-tema"`
+  (hífen) e `html[data-theme="escuro"|"claro"]`; o resto do GECOPE (Etapas A–D) usa
+  `gecope_theme` (underscore), classe `theme-dark` em `<html>`/`<body>`, valores
+  `dark`/`light`. Alinhar na **F8** (integração) para que a escolha de tema seja a mesma
+  em todo o sistema.
+- **Paleta CSS independente.** `assistente.html` define cores próprias
+  (`--bg-page`, `--accent:#4f46e5`, …) sem apontar para os tokens `--sop-*` / `--slate-*`
+  do `style.css`, como `cronograma.html` faz. Revisar na **F6/F8**.
+- `gecope_ia_readonly` alcança objetos de extensões via `GRANT TO PUBLIC` — fechar na F1
+  (ver acima e `escopo-dados.md`).
 - A Edge Function publicada (v12) continua a mesma; nada de deploy na F0.

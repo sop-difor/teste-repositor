@@ -4,6 +4,10 @@ Vale para **todas as fases** (F0–F8). Segue o modelo das Etapas A–D do GECOP
 (`docs/_concluido/etapa-*-revisores.md`), adaptado para revisão **por fase** em vez de uma
 única revisão no fim.
 
+> **Nota de terminologia.** O plano combinado com o usuário falava em `REPROVADO`. Este
+> documento adota **`APROVADO` / `BLOQUEADO`** para casar com todos os documentos de
+> revisão já existentes no GECOPE (Etapas A–D). São o mesmo conceito.
+
 ## Como a revisão funciona
 
 1. **Quando roda:** ao final de **cada fase**, antes de liberar a seguinte.
@@ -52,8 +56,15 @@ Vale para **todas as fases** (F0–F8). Segue o modelo das Etapas A–D do GECOP
 Confere, conforme a fase:
 - Menor privilégio: a role, a função e a Edge Function só alcançam o que
   `escopo-dados.md` autoriza. `gecope_ia_readonly` sem `LOGIN`.
+- **Alcance real da role**: enumerar (via `information_schema` / `pg_class` em **todos** os
+  schemas, não só `public`) tudo que `gecope_ia_readonly` consegue `SELECT`, e confirmar
+  que nada além da lista branca é alcançável — inclusive objetos herdados de
+  `GRANT ... TO PUBLIC` (`net.*`, `pg_stat_statements`, `cron.*`).
 - Injeção de SQL: entradas do usuário nunca concatenadas em SQL cru; validação
   só-`SELECT` / instrução única intacta nas duas camadas.
+- **Injeção via prompt**: o texto livre da pergunta chega ao LLM. Confirmar que uma
+  pergunta que tenta induzir SQL fora do dicionário (outra tabela, `UNION`, subconsulta a
+  `net.*`) é contida pelas camadas de banco/Edge, não só pelo prompt.
 - Exposição via PostgREST: `executar_consulta_ia` **não** executável por `anon` /
   `authenticated` (a partir da F1).
 - Identidade: `usuario` derivado do JWT no servidor, nunca do corpo (a partir da F1).
@@ -74,6 +85,9 @@ Confere, conforme a fase:
   amigável — nunca stack trace, nunca `[object Object]`, nunca número inventado.
 - Fatos externos citados no plano conferem (ex.: IDs de modelo Gemini que respondem
   `200`; relacionamentos de tabela).
+- **Funções e regex do banco testadas contra o Postgres real**, não só lidas — o bug do
+  `\b` (backspace) vs. `\y` (borda de palavra) em `executar_consulta_ia` só apareceu
+  executando.
 - A partir da F3: o eval roda e as metas são atingidas.
 
 ### Revisor 3 — `rev-produto` (Produto & UX)
@@ -98,10 +112,13 @@ Confere, conforme a fase:
 - Reaproveita `config.js` / `database.js` / `utils.js` e o padrão de sessão do GECOPE em
   vez de reimplementar (relevante a partir da F8; na F0, apenas registrar o que será
   reaproveitado).
-- Tema claro/escuro alinhado ao resto do sistema (chave e etiqueta iguais às das
-  Etapas A–D).
+- Tema claro/escuro alinhado ao resto do sistema (chave `gecope_theme`, classe
+  `theme-dark` em `<html>`/`<body>`, valores `dark`/`light` — iguais às Etapas A–D).
+- Paleta CSS aponta para os tokens do design system (`--sop-*` / `--slate-*` de
+  `style.css`), como `cronograma.html` faz — ou a exceção fica registrada e justificada.
 - Documentação na pasta `docs/assistente/` no mesmo padrão das Etapas A–D
-  (plano / spec / revisão por fase).
+  (plano / spec / revisão por fase). Fases de conteúdo denso (F4, F6) reavaliam se cabe
+  uma `spec` separada.
 - Migrações de banco como arquivo em `sql/` para aplicação manual — o fluxo que o GECOPE
   já usa (`sql/_aplicados/`).
 

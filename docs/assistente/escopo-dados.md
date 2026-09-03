@@ -53,14 +53,28 @@ e recebem `GRANT SELECT` para `gecope_ia_readonly` quando criadas.
 
 ## Como o escopo é imposto (defesa em profundidade)
 
-1. **Grant** — `gecope_ia_readonly` só tem `SELECT` nos 13 (+ futuras views largas). Uma
-   consulta a qualquer outra tabela falha com "permission denied".
+1. **Grant** — `gecope_ia_readonly` recebeu `GRANT SELECT` **direcionado** apenas nos 13
+   objetos do domínio (+ futuras views largas). Uma consulta a qualquer outra tabela do
+   schema `public` falha com "permission denied".
+
+   **Ressalva conhecida (a fechar na F1):** além desses 13, a role ainda enxerga alguns
+   objetos por `GRANT ... TO PUBLIC` de extensões — `net._http_response`,
+   `net.http_request_queue` (podem conter `Authorization` de chamadas HTTP de saída),
+   `extensions.pg_stat_statements` / `_info` (texto SQL de toda a atividade do banco),
+   `cron.job` / `cron.job_run_details` (efetivamente vazias para a role por RLS). Como
+   `executar_consulta_ia` roda como essa role e o validador só checa "é `SELECT`?", um
+   `select * from net._http_response` gerado (ou induzido pelo texto da pergunta) passaria
+   hoje. É estado de produção pré-existente, não algo aberto por este projeto. A F1
+   trata: `REVOKE SELECT ON ... FROM PUBLIC` em `net.*`, `extensions.pg_stat_statements*`,
+   `cron.*`, e — como rede de segurança — restringir o `search_path` / lista branca de
+   schemas alcançáveis.
 2. **Função** — `executar_consulta_ia` roda como essa role (`SECURITY DEFINER`), aceita só
    `SELECT`, uma instrução, injeta `LIMIT`.
 3. **Edge Function** — valida o SQL do LLM antes de executar (só-`SELECT`, sem DDL/DML,
    instrução única).
 4. **Prompt** — o dicionário injetado no LLM lista **apenas** estes objetos e manda não
-   inventar colunas.
+   inventar colunas. **Não** é barreira de segurança (o texto da pergunta pode tentar
+   induzir SQL fora do dicionário) — as camadas 1–3 é que contêm.
 
 Qualquer proposta de ampliar o escopo passa por: atualizar este documento → `GRANT SELECT`
 → atualizar `schema_dicionario.md` e `schema_prompt.ts` → nova rodada dos 4 revisores.

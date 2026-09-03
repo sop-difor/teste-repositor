@@ -54,18 +54,30 @@ devolverem `APROVADO`. `BLOQUEADO` volta para correção na mesma fase. Duas rod
 
 ## Diagnóstico que motivou a iniciativa (03/09/2026)
 
-Primeiro dia de teste real: 1 usuário, 25 perguntas, 14 falhas.
+Primeiro dia de teste real: 1 usuário, 25 perguntas, 14 falhas (11 sucessos). Das 14
+falhas: 3× HTTP 404, 4× HTTP 503, 6× erro `42601` da família `limit`, 1× `[object Object]`.
 
-- Motor de intenções: **10/10 corretas**. É a parte sólida.
+- Motor de intenções: **todas as perguntas do teste que bateram uma intenção foram
+  respondidas corretamente**. É a parte sólida. (Hoje são 19 intenções definidas; a F5
+  leva a ~40–60.)
 - Caminho LLM: praticamente inoperante, por 3 causas independentes:
-  1. Modelo `gemini-2.5-flash` **descontinuado** (HTTP 404) — o código já foi alterado
-     para outro ID, mas sem cadeia de fallback nem verificação.
+  1. Modelo `gemini-2.5-flash` **descontinuado** (HTTP 404, "no longer available to new
+     users") — o código já foi alterado para outro ID, mas sem cadeia de fallback nem
+     verificação.
   2. Free tier **sobrecarregada** (HTTP 503, "model is currently experiencing high
      demand").
-  3. **Bug local**: `executar_consulta_ia` concatena `' limit 200'` na string do SQL
-     gerado; quando o SQL do modelo tem `;` final, comentário `--` ou quebra de linha, o
-     resultado é `syntax error at or near "limit"` / `at or near ";"`. Causa dominante
-     das falhas de execução.
+  3. **Bug local — `LIMIT` duplicado.** `executar_consulta_ia` tenta anexar `' limit 200'`
+     só quando o SQL ainda não tem `LIMIT`, mas o guard `!~* '\blimit\s+\d+'` **nunca
+     casa**: no regex do Postgres (ARE), `\b` é o caractere *backspace* (0x08), não borda
+     de palavra — borda de palavra é `\y`. Então `' limit 200'` é anexado **sempre**.
+     Como `schema_prompt.ts` instrui o modelo a "sempre incluir `LIMIT 200`", o SQL vira
+     `... limit 200 limit 200` → `syntax error at or near "limit"`. O strip de `;` final
+     (`regexp_replace(trim(...), ';\s*$', '')`) **funciona** e não é o gatilho. Causa
+     dominante das falhas de execução — **corrigir na F2** atacando a raiz (`\b`→`\y`, ou
+     remover `LIMIT` pré-existente antes de anexar, ou parar de instruir o modelo a
+     incluir `LIMIT`, ou de-duplicar), não a limpeza de `;`.
+  4. Um registro com `erro = "[object Object]"` no log (12:45) — serialização de erro
+     falhou uma vez apesar de `paraTextoSeguro`. Verificar na F2/F6 se chega ao usuário.
 - Segurança: `executar_consulta_ia` tem `EXECUTE` para `anon` e `authenticated` —
   qualquer pessoa com a anon key pública (está em `config.js`) roda `SELECT` arbitrário
   nas 13 tabelas via `/rest/v1/rpc/`, sem passar pela Edge Function. `usuario` vem do
