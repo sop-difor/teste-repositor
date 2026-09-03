@@ -27,41 +27,50 @@ Transacional e idempotente. Contém:
 - **B** — `CREATE OR REPLACE FUNCTION executar_consulta_ia` com o blocklist usando `\y`
   (mesma lista de palavras, só o operador de borda muda). Corpo base = `pg_get_functiondef`
   da função em produção em 2026-09-03; diffs listados no cabeçalho do `.sql`.
-- **C** — a guarda de schema **normaliza antes de checar**: remove comentários de bloco
-  (`/* */`) e de linha (`--`) e aspas de identificador (`"`), e só então aplica os regex.
-  Fecha os bypasses que o `rev-seguranca` achou: `select ... from "net"."_http_response"` e
-  `net/**/._http_response`. Rejeita: schema fora de `public` (`net`, `cron`, `extensions`,
-  `auth`, `storage`, `vault`, `information_schema`, …); **qualquer** identificador `pg_*`
-  (qualificado ou não — `pg_roles`, `pg_stat_activity`, `pg_read_file`, `pg_sleep`);
-  `dblink` / `current_setting` / `set_config` / `lo_import` / `lo_export`.
+- **C** — a guarda **rejeita de saída** qualquer SQL cujo texto contenha comentário
+  (`--`, `/*`, `*/`) ou aspas de identificador (`"`), **antes** das outras checagens.
+  Normalizar por regex (tirar comentário/aspas) **não é são** — comentário aninhado
+  (`/*/**/*/`, que o Postgres trata como um só) e `--` dentro de literal de string furam,
+  e as duas primeiras versões da F1 vazaram por aí. SQL analítico gerado pelo modelo não
+  usa nenhum dos três; `schema_prompt.ts` passou a instruir isso. Com o texto
+  garantidamente sem comentário/aspas, os regex seguintes rejeitam: schema fora de
+  `public` (`net`, `cron`, `extensions`, `auth`, `storage`, `vault`, `information_schema`,
+  …); **qualquer** identificador `pg_*` (qualificado ou não); `dblink` / `current_setting`
+  / `set_config` / `lo_import` / `lo_export`. Espelhado no `validarSqlGeminiOuFalhar`.
 - **C — `REVOKE ... FROM PUBLIC` no schema `net`** (buraco na origem): tentado por padrão
   na migração, **dentro de um bloco que não aborta se falhar**. O SQL Editor roda como
   `postgres`, que **não** é superuser nem membro de `supabase_admin` (o concedente do
-  grant a `PUBLIC`) — então este `REVOKE` provavelmente falha, com `RAISE NOTICE`
-  explicando. Se falhar, a guarda normalizada da função (item C acima) é a contenção
-  efetiva; para fechar na origem, abrir chamado no suporte Supabase. `anon`,
-  `authenticated`, `service_role`, `postgres`, `supabase_functions_admin` têm `USAGE`
-  próprio em `net` e **não** são afetados — só `gecope_ia_readonly` (que é o alvo).
-  `pg_stat_statements` e `cron` **não** entram: confirmado que `gecope_ia_readonly` não
-  tem `USAGE` nesses schemas, então não são alcançáveis (o `REVOKE` seria no-op).
+  grant a `PUBLIC`) — então este `REVOKE` provavelmente falha, com `RAISE NOTICE`. **Item
+  de fase (não opcional):** se falhar, abrir chamado no suporte Supabase pedindo
+  `REVOKE USAGE ON SCHEMA net FROM PUBLIC` + `REVOKE ALL ON net._http_response,
+  net.http_request_queue FROM PUBLIC` — é a defesa em profundidade real, além da guarda
+  da função. `anon`, `authenticated`, `service_role`, `postgres`,
+  `supabase_functions_admin` têm `USAGE` próprio em `net` e **não** são afetados — só
+  `gecope_ia_readonly` (que é o alvo). `pg_stat_statements` e `cron` **não** entram:
+  `gecope_ia_readonly` não tem `USAGE` nesses schemas (não alcançáveis).
 - **G** — 9 policies `PERMISSIVE FOR SELECT TO gecope_ia_readonly USING (true)`, uma por
   tabela-base do escopo, aplicadas num laço idempotente (`drop policy if exists` antes).
   Dá à role a leitura da lista branca que a RLS negava. Visível em `pg_policies`; não
   toca policies de outros papéis (permissive = OR); as 4 views (`security_invoker`)
   resolvem via as tabelas-base. Alternativa não adotada: `ALTER ROLE gecope_ia_readonly
   BYPASSRLS` (mais curto, menos auditável, atributo amplo no papel).
+  **Consequência de produto a registrar (`rev-seguranca`):** `USING (true)` em `processos`
+  ignora a restrição por `fiscal_matricula` que vale para `authenticated` — um usuário
+  "fiscal" do piloto passaria a ver **todos** os processos pelo assistente, não só os
+  dele. Para o piloto (equipe GECOPE + gestores, que já veem tudo) é aceitável; se um
+  fiscal de campo entrar no piloto, decidir: aceitar, ou filtrar por identidade no
+  assistente (F5, com `usuario` do JWT). **A confirmar no sign-off.**
 - **O guard de `LIMIT` (`\blimit\s+\d+`) fica INTOCADO de propósito.** O `LIMIT`
   duplicado é bug de **comportamento** — corrigido e testado na **F2**. A F1 só mexe na
   camada de segurança / acesso.
 - Bloco de `ROLLBACK` comentado + bloco de verificação ao final (rodar fora da transação).
 
-Limitação assumida: mesmo com a normalização, as guardas são regex sobre o texto do SQL —
-um literal de string contendo `'...pg_...'` ou `'drop'` pode gerar falso-positivo
-("consulta não permitida"), e um `--` dentro de um literal quebra a consulta (erro, não
-brecha). É aceitável para uma guarda de segurança; as colunas dos 13 objetos não têm
-URL/e-mail. As barreiras primárias continuam sendo o `REVOKE EXECUTE` (A) + a Edge
-Function autenticada (D); a guarda normalizada é a contenção de schema quando o `REVOKE`
-de `PUBLIC` no `net` não pôde ser aplicado.
+Limitação assumida: rejeitar `--` / `/*` / `"` de saída pode recusar uma consulta legítima
+que use um literal de string contendo `--` (raro em dados de obra; falha fechada, o
+usuário reformula). O modelo é instruído a não gerar comentário/aspas. As barreiras de
+`net.*` são: (1) `REVOKE EXECUTE` (A) — sem caminho direto por RPC; (2) Edge Function
+autenticada (D); (3) a guarda de rejeição da função; (4) o `REVOKE ... FROM PUBLIC`
+(quando aplicável, via suporte Supabase).
 
 ### 2. Edge Function — `supabase/functions/gecope-assistant/index.ts`
 
@@ -120,9 +129,11 @@ usuário preferir mover.
 1. Revisar `sql/assistente/f1_seguranca.sql`.
 2. Aplicar no SQL Editor do projeto `qexdnxqmiaarzwwwrcor`. Ler as mensagens `NOTICE` do
    bloco do `net` (deve dizer se o `REVOKE FROM PUBLIC` passou ou falhou — falhar é
-   esperado e ok). Rodar o bloco de verificação.
-3. Se o `REVOKE ... FROM PUBLIC` no `net` falhou e você quer fechar na origem: abrir
-   chamado no suporte Supabase (`REVOKE USAGE ON SCHEMA net FROM PUBLIC`).
+   esperado). Rodar o bloco de verificação.
+3. **Se o `REVOKE ... FROM PUBLIC` no `net` falhou** (o esperado): abrir chamado no
+   suporte Supabase pedindo `REVOKE USAGE ON SCHEMA net FROM PUBLIC` +
+   `REVOKE ALL ON net._http_response, net.http_request_queue FROM PUBLIC`. É item de fase
+   (defesa em profundidade real), não opcional.
 4. Autorizar o deploy da Edge Function (`supabase functions deploy gecope-assistant`).
    Rollback = redeploy da v12 (código em git no commit `782e86c`) + bloco `ROLLBACK` do `.sql`.
 
@@ -135,8 +146,10 @@ usuário preferir mover.
 | 3 | idem `service_role` | `true` |
 | 4 | `select ('select 1; drop x' ~* '\y(insert\|update\|delete\|drop\|alter\|truncate\|grant\|revoke\|create)\y')` | `true` |
 | 5 | `executar_consulta_ia('select 1 from net._http_response')` | ERRO "schema fora de public" |
-| 5b | `executar_consulta_ia('select 1 from "net"."_http_response"')` (aspas) | ERRO "schema fora de public" |
-| 5c | `executar_consulta_ia('select 1 from net/**/._http_response')` (comentário) | ERRO "schema fora de public" |
+| 5b | `executar_consulta_ia('select 1 from "net"."_http_response"')` (aspas) | ERRO "Comentário SQL ou identificador entre aspas" |
+| 5c | `executar_consulta_ia('select 1 from net/**/._http_response')` (comentário) | ERRO "Comentário SQL ou identificador entre aspas" |
+| 5c2 | `executar_consulta_ia('select 1 from net/*/**/*/._http_response')` (comentário aninhado) | ERRO "Comentário SQL ou identificador entre aspas" |
+| 5c3 | `executar_consulta_ia($$select 1 where 'x'='--' union select 1 from net._http_response$$) ` (`--` em literal) | ERRO "Comentário SQL ou identificador entre aspas" |
 | 5d | `executar_consulta_ia('select 1 from pg_roles')` (catálogo não-qualificado) | ERRO "catálogo do sistema" |
 | 5e | `executar_consulta_ia($$select current_setting('is_superuser')$$)` | ERRO "Função não permitida" |
 | 6 | `executar_consulta_ia('select count(*) from contratos_edificacao')` | retorna ~352 — **não 0** (buraco G) |

@@ -6,12 +6,12 @@ raciocínio + sondagens de leitura via Supabase MCP.
 
 ## Vereditos
 
-| Lente | Rodada 1 | Rodada 2 |
-|---|---|---|
-| `rev-seguranca` | **BLOQUEADO** (bypass da guarda de schema) | _(re-submissão — commits `d0ae360` + `c0d37cd`)_ |
-| `rev-correcao` | **APROVADO** (0 bloqueantes) | **APROVADO** — buraco G verificado (simulou as policies em prod com rollback: `processos` 0→427, views resolvem). Follow-ups cosméticos (3b `SET ROLE`, célula 6) corrigidos. |
-| `rev-produto` | **APROVADO** | — |
-| `rev-aderencia` | **APROVADO** | — |
+| Lente | R1 | R2 | R3 |
+|---|---|---|---|
+| `rev-seguranca` | **BLOQUEADO** (bypass: aspas/comentário) | **BLOQUEADO** (normalização não é sã: comentário aninhado, `--` em literal) | _(re-submissão — commit da rejeição de comentário/aspas)_ |
+| `rev-correcao` | **APROVADO** | **APROVADO** — buraco G verificado (simulou as policies em prod com rollback: `processos` 0→427). Follow-ups cosméticos corrigidos. | — |
+| `rev-produto` | **APROVADO** | — | — |
+| `rev-aderencia` | **APROVADO** | — | — |
 
 `rev-correcao` aprovou sem bloqueios, mas um dos seus follow-ups é grave o bastante para
 virar item de fase: **buraco G** (a RLS bloqueia a role de leitura → o caminho LLM
@@ -34,11 +34,22 @@ E `gecope_ia_readonly` continua com `USAGE` em `net` + `SELECT` em `net._http_re
 (que guarda corpos/headers de respostas HTTP de saída do `pg_net` — pode conter tokens).
 A afirmação do doc de que "a guarda da função já contém sem o `REVOKE`" era **falsa**.
 
-**Correção aplicada:**
+**Correção — 2 rodadas.**
 
-1. **Normalização antes das checagens** — a função e o `validarSqlGeminiOuFalhar` removem
-   comentários (`/* */`, `--`) e aspas de identificador (`"`) e só então aplicam os regex.
-   Mata os bypasses por aspas e por comentário.
+**R1→R2 (`d0ae360`):** normalização (tira `/* */`, `--`, `"`) antes dos regex. O
+`rev-seguranca` re-bloqueou: normalizar por regex **não é são** — `/*/**/*/` (comentário
+aninhado, que o Postgres lê como um só) deixa um `*/` órfão, e `--` dentro de literal de
+string (`where x = 'a--' union select … from net._http_response`) esconde o resto da
+linha. Bypasses confirmados ao vivo.
+
+**R2→R3 (rejeição de saída):** a função e o `validarSqlGeminiOuFalhar` **rejeitam** —
+antes de qualquer outra checagem — todo SQL cujo texto contenha `--`, `/*`, `*/` ou `"`.
+SQL analítico gerado pelo modelo não usa nenhum dos três; `schema_prompt.ts` passou a
+proibir explicitamente. Testado ao vivo contra a lista completa de bypasses do
+`rev-seguranca` (comentário simples e aninhado, `--` em literal, aspas) + 5 consultas
+legítimas — todos os ataques barrados, zero falso-positivo.
+
+1. **Rejeição de comentário/aspas** — ver acima. É sã (não depende de parsear SQL).
 2. **Bloqueio de qualquer `pg_*`** (qualificado ou não) — `pg_roles`, `pg_stat_activity`,
    `pg_read_file`, `pg_sleep`, etc.
 3. **Bloqueio de `dblink` / `current_setting` / `set_config` / `lo_import` / `lo_export`.**
@@ -75,8 +86,12 @@ doc reforçadas para exigir contagem real (> 0).
 | FU-26 | `consultas_ia_log` — `anon`/`authenticated` tinham `GRANT` de tabela; só a RLS (sem `FORCE`) protegia o texto das perguntas (LGPD) | **Feito na F1**: `REVOKE ALL ... FROM anon, authenticated` + `ALTER TABLE ... FORCE ROW LEVEL SECURITY` no `.sql` |
 | FU-27 | Rate limit TOCTOU (conta antes do insert; rajada concorrente passa) + fail-open em erro de query | Registrado como dívida; aceitável para piloto; doc explicita |
 | FU-28 | `^select` rejeita CTE (`WITH x AS (…) SELECT …`) | Correção/robustez — **F2** (a camada de limit/validação será retrabalhada lá) |
-| FU-29 | `revisores.md` lente 1: acrescentar "guardas por regex testadas contra identificador entre aspas e comentário SQL, não só a forma canônica" | **Feito**: item adicionado à lente 1 |
+| FU-29 | `revisores.md` lente 1: acrescentar "guardas por regex testadas contra identificador entre aspas e comentário SQL, não só a forma canônica" | **Feito**: item adicionado à lente 1 (R2: ampliar para "normalização tem de ser sã, ou rejeitar o token") |
 | FU-30 | `pg_stat_statements`/`cron` no `.sql` opcional eram no-op (sem `USAGE`) | Removidos do `.sql`; nota no doc |
+| FU-48 (R2) | Normalização por regex não é sã — comentário aninhado `/*/**/*/` e `--` em literal furam | **Feito (R3)**: guarda passou a **rejeitar de saída** `--`/`/*`/`*/`/`"`; `schema_prompt.ts` proíbe o modelo de gerá-los |
+| FU-49 (R2) | Chamado ao suporte Supabase (`REVOKE … FROM PUBLIC` no `net`) deve ser **item de fase**, não comentário opcional | **Feito**: passo 3 da "Ordem de aplicação", marcado como não-opcional |
+| FU-50 (R2) | Policy `USING (true)` do buraco G em `processos` dá a um "fiscal" do piloto visão de todos os processos (ignora `fiscal_matricula`) | **Registrado** em `fase-1-seguranca.md` §G — a confirmar no sign-off; filtro por identidade é F5 |
+| FU-51 (R2) | `revisores.md` lente 1: trocar "testar contra" por "normalização sã (tokenizer-aware) OU rejeitar o token"; citar comentário aninhado e `--` em literal | **Feito**: lente 1 atualizada |
 
 ### rev-produto
 

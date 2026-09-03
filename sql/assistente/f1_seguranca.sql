@@ -8,8 +8,10 @@
 -- Corpo base de executar_consulta_ia: pg_get_functiondef da função em produção,
 -- capturado em 2026-09-03. Únicos diffs intencionais desta migração:
 --   * blocklist de comandos: '\b' -> '\y' (borda de palavra de verdade);
---   * normalização (tira comentários e aspas de identificador) ANTES das
---     checagens de segurança — fecha bypass por "net"."x" e net/**/.x;
+--   * REJEITA de saída qualquer SQL com comentário ('--', '/*', '*/') ou aspas
+--     de identificador ('"') — normalizar por regex não é são (comentário
+--     aninhado /*/**/*/ e '--' dentro de literal furam). SQL analítico do
+--     modelo não usa nenhum dos três; o schema_prompt instrui isso;
 --   * guarda nova: proíbe referência a schema fora de 'public' e a catálogo
 --     do sistema (pg_*), qualificado ou não;
 --   * guarda nova: proíbe dblink / current_setting / set_config / lo_import /
@@ -41,46 +43,47 @@ language plpgsql
 security definer
 set search_path to 'public'
 as $function$
-declare
-  -- versão normalizada, só para as checagens de segurança: sem comentários de
-  -- bloco/linha e sem aspas de identificador. Impede bypass por
-  -- 'select ... from "net"."_http_response"' e 'net/**/._http_response'.
-  v_check text;
 begin
   sql_consulta := regexp_replace(trim(sql_consulta), ';\s*$', '');
 
-  v_check := regexp_replace(sql_consulta, '/\*.*?\*/', ' ', 'gs');  -- comentário de bloco
-  v_check := regexp_replace(v_check, '--[^\n]*', ' ', 'g');          -- comentário de linha
-  v_check := replace(v_check, '"', ' ');                             -- aspas de identificador
+  -- F1: rejeita comentário SQL e identificador entre aspas ANTES de qualquer
+  -- outra checagem. Normalizar (tirar comentário/aspas por regex) não é são —
+  -- comentário aninhado ('/*/**/*/') e '--' dentro de literal furam. SQL
+  -- analítico gerado pelo modelo não precisa de nenhum dos três; o schema_prompt
+  -- instrui o modelo a não usá-los. As checagens seguintes rodam sobre um texto
+  -- garantidamente sem comentário e sem aspas.
+  if sql_consulta ~ '/\*' or sql_consulta ~ '\*/' or sql_consulta ~ '--' or sql_consulta ~ '"' then
+    raise exception 'Comentário SQL ou identificador entre aspas não é permitido na consulta';
+  end if;
 
-  if v_check !~* '^\s*select\s' then
+  if sql_consulta !~* '^\s*select\s' then
     raise exception 'Apenas consultas SELECT são permitidas';
   end if;
 
   -- F1: '\y' = borda de palavra (ANTES era '\b' = backspace, nunca casava).
-  if v_check ~* '\y(insert|update|delete|drop|alter|truncate|grant|revoke|create)\y' then
+  if sql_consulta ~* '\y(insert|update|delete|drop|alter|truncate|grant|revoke|create)\y' then
     raise exception 'Comando não permitido detectado na consulta';
   end if;
 
-  if v_check ~* ';\s*\S' then
+  if sql_consulta ~* ';\s*\S' then
     raise exception 'Apenas uma instrução por consulta é permitida';
   end if;
 
   -- F1: nenhuma referência a schema fora de 'public'. gecope_ia_readonly tem
   -- USAGE em 'net' herdado de PUBLIC e net._http_response tem ALL para PUBLIC
   -- (pode guardar tokens de chamadas HTTP de saída do pg_net).
-  if v_check ~* '\y(net|cron|extensions|auth|storage|vault|graphql|graphql_public|realtime|pgsodium|pgbouncer|pg_temp|pg_toast|information_schema|supabase_migrations|supabase_functions|_analytics|_realtime)\s*\.' then
+  if sql_consulta ~* '\y(net|cron|extensions|auth|storage|vault|graphql|graphql_public|realtime|pgsodium|pgbouncer|pg_temp|pg_toast|information_schema|supabase_migrations|supabase_functions|_analytics|_realtime)\s*\.' then
     raise exception 'Referência a schema fora de public não é permitida';
   end if;
 
   -- F1: nenhum identificador de catálogo do sistema (pg_class, pg_roles,
   -- pg_stat_activity, pg_read_file, pg_sleep, ...), qualificado ou não.
-  if v_check ~* '\ypg_[a-z0-9_]+' then
+  if sql_consulta ~* '\ypg_[a-z0-9_]+' then
     raise exception 'Referência a catálogo do sistema não é permitida';
   end if;
 
   -- F1: funções de leitura de ambiente / ponte externa.
-  if v_check ~* '\y(dblink|current_setting|set_config|lo_import|lo_export)\y' then
+  if sql_consulta ~* '\y(dblink|current_setting|set_config|lo_import|lo_export)\y' then
     raise exception 'Função não permitida detectada na consulta';
   end if;
 

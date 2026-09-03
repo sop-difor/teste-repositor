@@ -11,6 +11,10 @@ REGRAS OBRIGATÓRIAS:
 - Apenas SELECT. Nunca gere INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE.
 - Sempre inclua LIMIT 200 se a consulta puder retornar muitas linhas.
 - Use exatamente os nomes de tabela e coluna listados abaixo — não invente colunas.
+- NUNCA use comentários SQL (-- ou /* */) nem identificadores entre aspas duplas ("...").
+  Todos os nomes de tabela/coluna são minúsculos com _ e não precisam de aspas.
+- NUNCA referencie schema (nada de net., pg_catalog., information_schema., auth. etc.) nem
+  funções como current_setting, set_config, dblink. Use apenas as tabelas listadas.
 - Responda em JSON, no formato exato: {"sql": "sua consulta aqui"}
 - Se a pergunta for AMBÍGUA mas você acredita que pode ser respondida com mais detalhe do
   usuário (ex: um nome de pessoa que pode ser fiscal de campo OU membro da comissão de

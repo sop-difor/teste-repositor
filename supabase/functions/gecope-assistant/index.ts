@@ -55,15 +55,14 @@ function paraTextoSeguro(valor: unknown): string {
 // profundidade: mesmo que uma camada falhe, a outra ainda bloqueia).
 // ---------------------------------------------------------------------------
 // Espelha, em JS, as guardas da função executar_consulta_ia (defesa em
-// profundidade). Normaliza antes de checar — sem comentários de bloco/linha e
-// sem aspas de identificador — para fechar bypass por `"net"."x"` e `net/**/.x`.
+// profundidade). Rejeita de saída SQL com comentário ou aspas de identificador
+// — normalizar por regex não é são (comentário aninhado, `--` dentro de literal).
 function validarSqlGeminiOuFalhar(sql: string): void {
-  const s = sql
-    .trim()
-    .replace(/\/\*[\s\S]*?\*\//g, " ") // comentário de bloco
-    .replace(/--[^\n]*/g, " ")          // comentário de linha
-    .replace(/"/g, " ");                // aspas de identificador
+  const s = sql.trim();
 
+  if (/\/\*|\*\/|--|"/.test(s)) {
+    throw new Error("Consulta gerada usa comentário ou aspas — bloqueada.");
+  }
   if (!/^\s*select\s/i.test(s)) {
     throw new Error("Consulta gerada não começa com SELECT — bloqueada.");
   }
