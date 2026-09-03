@@ -8,8 +8,8 @@ raciocínio + sondagens de leitura via Supabase MCP.
 
 | Lente | Rodada 1 | Rodada 2 |
 |---|---|---|
-| `rev-seguranca` | **BLOQUEADO** (bypass da guarda de schema) | _(re-submissão — commits `d0ae360` + `<G>`)_ |
-| `rev-correcao` | **APROVADO** (0 bloqueantes) | _(re-submissão — buraco G)_ |
+| `rev-seguranca` | **BLOQUEADO** (bypass da guarda de schema) | _(re-submissão — commits `d0ae360` + `c0d37cd`)_ |
+| `rev-correcao` | **APROVADO** (0 bloqueantes) | _(re-submissão — buraco G, commit `c0d37cd`)_ |
 | `rev-produto` | **APROVADO** | — |
 | `rev-aderencia` | **APROVADO** | — |
 
