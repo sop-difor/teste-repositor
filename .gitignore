@@ -28,5 +28,9 @@ aditivos_contrato.csv
 medicoes.csv
 
 # Reestruturação das tabelas SEINFRA/SINAPI/ORSE (ver tabelas.md)
-sql/reestruturacao_tabelas/backup/
-sql/reestruturacao_tabelas/node_modules/
+sql/reestruturacao_tabelas/**/backup/
+sql/reestruturacao_tabelas/**/node_modules/
+sql/reestruturacao_tabelas/**/db-url.local
+sql/reestruturacao_tabelas/**/stg_*.csv
+sql/reestruturacao_tabelas/**/*.xls
+sql/reestruturacao_tabelas/**/*.xlsx

@@ -29,7 +29,7 @@ async function executarBuscaTabela() {
         // Lista explícita de colunas: a busca não usa a composição (só o modal de
         // detalhe usa). Pedir 'composicao' aqui forçaria a fachada a montar o JSON
         // analítico para cada linha do resultado — lento. Ver gecope/tabelas.md.
-        let query = sbClient.from(nomeTabela).select('id,identificacao,codigo,descricao,unidade,preco_unitario,tipo_encargo,referencia,created_at');
+        let query = sbClient.from(nomeTabela).select('id,identificacao,codigo,descricao,unidade,preco_unitario,tipo_encargo,referencia,created_at,origem_preco');
         if (fonte === 'SEINFRA') query = query.eq('referencia', versaoBase);
         else query = query.eq('referencia', dataFormatada);
 
@@ -119,6 +119,10 @@ function renderTabelaResults(lista) {
         let valorBase = parseFloat(item.valor_unitario || item.preco_unitario || item.valor || item.preco || 0);
         const valorFinal = valorBase * (1 + bdiVal / 100) * (1 - descVal / 100);
         const stylePreco = (bdiVal > 0 || descVal > 0) ? 'color: #d63384 !important;' : 'color: var(--sop-gray-dark);';
+        // Selo "SP": preço vindo da coluna de São Paulo porque Ceará estava zerado (só SINAPI).
+        const seloSP = (item.origem_preco === 'SP')
+            ? ' <span class="badge bg-warning text-dark" style="font-size:0.6rem;vertical-align:middle;" title="Preço de referência de São Paulo (valor de Ceará indisponível)">SP</span>'
+            : '';
 
         let btnAction = '';
         const btnImprimir = `<button class="btn btn-sm btn-outline-success border me-1" onclick="imprimirLinhaTabela('${item.codigo}', '${fonte}', '${versaoBase}', '${tipoRef}')" title="Imprimir Composição"><i class="bi bi-printer"></i></button>`;
@@ -135,7 +139,7 @@ function renderTabelaResults(lista) {
                             <td class="fw-bold text-primary text-center">${item.codigo}</td>
                             <td class="text-uppercase small">${item.descricao}</td>
                             <td class="text-center small fw-bold">${item.unidade}</td>
-                            <td class="text-end pe-3 fw-bold" style="${stylePreco}">${valorFinal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td class="text-end pe-3 fw-bold" style="${stylePreco}">${valorFinal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}${seloSP}</td>
                             <td class="text-end pe-3">${btnAction}</td>
                         </tr>`;
     };
@@ -214,7 +218,7 @@ function renderizarComposicaoSINAPI(dadosPai, modalBody) {
                                     <td style="padding: 0.5rem 0.5rem; text-align: justify;">${(item.descricao_item || item.descricao || '').toUpperCase()}</td>
                                     <td style="padding: 0.5rem 0.5rem; text-align: center;">${item.unidade || '-'}</td>
                                     <td style="padding: 0.5rem 0.5rem; text-align: center;">${formatDecimal(item.coeficiente)}</td>
-                                    <td style="padding: 0.5rem 0.5rem; text-align: right;">${formatDecimal(item.preco_unitario, 2)}</td>
+                                    <td style="padding: 0.5rem 0.5rem; text-align: right;">${formatDecimal(item.preco_unitario, 2)}${item.origem_preco === 'SP' ? ' <span class="badge bg-warning text-dark" style="font-size:0.6rem;" title="Preço de São Paulo (Ceará indisponível)">SP</span>' : ''}</td>
                                     <td style="padding: 0.5rem 0.5rem; text-align: right; font-weight: bold;">${formatDecimal(item.total, 2)}</td>
                                 </tr>
                             `;

@@ -1086,7 +1086,7 @@ async function executarBuscaItemComposicao() {
 
     // Colunas explícitas: a busca de item não lê a composição analítica (só campos
     // planos). Evita a fachada montar o JSON da composição por linha. Ver tabelas.md.
-    const colsBusca = 'id,identificacao,codigo,descricao,unidade,preco_unitario,tipo_encargo,referencia,created_at';
+    const colsBusca = 'id,identificacao,codigo,descricao,unidade,preco_unitario,tipo_encargo,referencia,created_at,origem_preco';
     let query = sbClient
         .from(tabela)
         .select(colsBusca)

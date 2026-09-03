@@ -250,8 +250,9 @@ Legenda de status: ⬜ pendente · 🟡 em andamento · ✅ concluída · 🔴 b
 
 ### E0 — Backup 🟡 (CSVs gerados; falta o responsável copiar para fora do projeto)
 - **Objetivo:** ter os 3 CSVs guardados fora do banco antes de qualquer mudança.
-- **Ações:** rodar `sql/reestruturacao_tabelas/E0_backup.mjs` (lê a string de conexão de
-  `db-url.local`). Passo a passo em `sql/reestruturacao_tabelas/README_E0.md`.
+- **Ações:** rodar `E0_backup.mjs` (lê a string de conexão de `db-url.local`). Passo a
+  passo em `README_E0.md`. *(scripts E0..E5f removidos da pasta em 2026-09-02 — já
+  aplicados; ver migrations `e0`..`e6b` no Supabase e o histórico neste arquivo)*
 - **Feito 2026-09-01:** `backup/sinapi_itens_2026-09-01.csv` (263.586), `orse_itens_...`
   (176.367), `seinfra_itens_...` (58.510). Auto-conferência de linhas: OK nas 3.
   Cabeçalhos batem com §3.
@@ -443,11 +444,17 @@ Legenda de status: ⬜ pendente · 🟡 em andamento · ✅ concluída · 🔴 b
 - **Reverter:** só via backup E0 (por isso E0/E5b são pré-requisito).
 - **Depende de:** E6 + alguns dias de uso sem incidente.
 
-### E8 — Documentar a carga mensal ✅ (2026-09-01)
-- Guia: `sql/reestruturacao_tabelas/E8_carga_mensal.md` (formato do CSV, import na `stg_*`,
-  `SELECT rt_aplicar_<fonte>('<ref>')`, travas de ordem/repetição, backfill de analítica).
-- **Pendente do responsável:** ajustar o programa de carga para gerar o CSV sem a coluna
-  `id` (as demais colunas já são as mesmas de antes). Conferir com os exemplos em `tabelas/`.
+### E8 — Documentar a carga mensal ✅ (2026-09-02)
+- Pasta `sql/reestruturacao_tabelas/` reorganizada:
+  - `COMO_CARREGAR.md` — índice + formato do CSV + regras + funções.
+  - `SINAPI/` — extrator (`gerar_stg_sinapi.py` + `.bat` + `.pyw`), `subir_stg_sinapi.mjs`,
+    `carga_sinapi_manual.sql`, `LEIA-ME.md`.
+  - `ORSE/` e `SEINFRA/` — `carga_<fonte>_manual.sql` + `LEIA-ME.md` (CSV vem do
+    programa do responsável; extrator dedicado pode ser feito depois).
+  - (os scripts E0..E5f foram removidos em 2026-09-02 — já aplicados; ficam nas
+    migrations do Supabase `e0`..`e6b` e no histórico deste arquivo).
+  - `node_modules/`, `package*.json` na raiz da pasta (deps dos `.mjs`).
+  - Removidos: `__pycache__/`, cópias de `.xlsx`/`.csv` (agora no `.gitignore`).
 
 ---
 
@@ -579,6 +586,10 @@ Legenda de status: ⬜ pendente · 🟡 em andamento · ✅ concluída · 🔴 b
 | 2026-09-01 | E7 | `DROP TABLE *_itens_old` + `VACUUM FULL` | get_advisors ok | ✅ **DB 481 → 101 MB**; preços 372 → 79 MB |
 | 2026-09-02 | Rev. E5-E7 | Agente revisor: fidelidade das views 100% (29 refs). 1 blocker + 4 should-fix | — | ver §14 |
 | 2026-09-02 | E5d/E5e | Fixes: `rt__sync_item_desc` wired + revogado; dropdown lê `referencia_carregada` (front-end); drop `rt_migrar_*`; síntese de órfãos p/ cargas futuras; revoke escrita nas views | — | ✅ |
+| 2026-09-02 | SINAPI reload | Responsável zerou SINAPI. Criado `gerar_stg_sinapi.py` (lê a planilha da Caixa: abas ISD/ICD/CSD/CCD/Analítico, regra CE→SP, código das composições vem de fórmula HYPERLINK, monta composicao). Testado ponta-a-ponta com 2025-01 (amostra) → view remonta composição OK. | teste manual | ✅ script pronto |
+| 2026-09-02 | E6/E6b | Migrations: preço `'ambas'` quando onerada=desonerada (1 linha em vez de 2, insumos e composições) via `rt__preco_sinapi`; view expande 'ambas' em onerada+desonerada; coluna `origem` (CE/SP) em `sinapi_preco` + `stg_sinapi` + `sinapi_itens` (e `origem_preco` NULL nas views ORSE/SEINFRA p/ uniformizar o `select`); `rt_composicao_sinapi` traz `origem_preco` por insumo. Extrator emite `origem_preco`. Front-end: selo "SP" na busca e no modal + `origem_preco` no select. | teste manual (7 preços em vez de 10; SP flui até o jsonb) | ✅ |
+| 2026-09-02 | SINAPI 2025-01 | Carga real do 1º mês: 14.505 códigos, 19.862 preços (5.440 'ambas' = −21%), 2.089 via SP, 52.095 linhas de composição. DB 91 MB. Front-end publicado — busca/composição/selo SP funcionando. | conferido | ✅ |
+| 2026-09-02 | Extrator | `gerar_stg_sinapi.py` passa a **descartar** linhas sem preço em CE nem SP (eram só composições — 1.854/mês no 2025-01). Wrappers: `.bat` (arrastar), `.pyw` (janela), `subir_stg_sinapi.mjs` (COPY). Responsável refaz o 2025-01 com o CSV novo. | — | ✅ |
 
 ## 14. Revisão E5-E7 — 2026-09-02 (agente revisor)
 
