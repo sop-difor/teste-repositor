@@ -6,12 +6,15 @@ raciocínio + sondagens de leitura via Supabase MCP.
 
 ## Vereditos
 
-| Lente | R1 | R2 | R3 |
-|---|---|---|---|
-| `rev-seguranca` | **BLOQUEADO** (bypass: aspas/comentário) | **BLOQUEADO** (normalização não é sã: comentário aninhado, `--` em literal) | _(re-submissão — commit da rejeição de comentário/aspas)_ |
-| `rev-correcao` | **APROVADO** | **APROVADO** — buraco G verificado em prod com rollback | **APROVADO** — 25 consultas legítimas contra a rejeição de comentário/aspas, 0 recusadas (salvo alias entre aspas, ver FU-52); bypasses barrados; função compila sem `declare` |
-| `rev-produto` | **APROVADO** | — | — |
-| `rev-aderencia` | **APROVADO** | — | — |
+| Lente | R1 | R2 | R3 | R4 |
+|---|---|---|---|---|
+| `rev-seguranca` | **BLOQUEADO** (aspas/comentário) | **BLOQUEADO** (normalização não é sã) | **BLOQUEADO** (`schema_to_xml('net',…)` — schema como string, sem ponto) | _pendente decisão do usuário (3× BLOQUEADO → escalonamento)_ |
+| `rev-correcao` | **APROVADO** | **APROVADO** (buraco G verificado em prod) | **APROVADO** (rejeição comentário/aspas, 0 falso-positivo) | _re-submeter (allowlist de funções)_ |
+| `rev-produto` | **APROVADO** | — | — | — |
+| `rev-aderencia` | **APROVADO** | — | — | — |
+
+**3× BLOQUEADO do `rev-seguranca` na F1 → escalonado ao usuário** (regra em
+`revisores.md` §6). Ver "Escalonamento" abaixo.
 
 `rev-correcao` aprovou sem bloqueios, mas um dos seus follow-ups é grave o bastante para
 virar item de fase: **buraco G** (a RLS bloqueia a role de leitura → o caminho LLM
@@ -49,19 +52,46 @@ proibir explicitamente. Testado ao vivo contra a lista completa de bypasses do
 `rev-seguranca` (comentário simples e aninhado, `--` em literal, aspas) + 5 consultas
 legítimas — todos os ataques barrados, zero falso-positivo.
 
-1. **Rejeição de comentário/aspas** — ver acima. É sã (não depende de parsear SQL).
-2. **Bloqueio de qualquer `pg_*`** (qualificado ou não) — `pg_roles`, `pg_stat_activity`,
-   `pg_read_file`, `pg_sleep`, etc.
-3. **Bloqueio de `dblink` / `current_setting` / `set_config` / `lo_import` / `lo_export`.**
-4. **`REVOKE USAGE ON SCHEMA net FROM PUBLIC`** entra na migração, rodando por padrão num
-   bloco que não aborta se falhar. O SQL Editor roda como `postgres`, que **não** é
-   superuser nem membro de `supabase_admin` (concedente do grant a `PUBLIC`) — confirmado
-   via `pg_auth_members` — então provavelmente falha, com `RAISE NOTICE`. Se falhar, a
-   guarda normalizada (itens 1–3) é a contenção; para fechar na origem, chamado no
-   suporte Supabase. `pg_stat_statements`/`cron` saíram da migração: `gecope_ia_readonly`
-   não tem `USAGE` nesses schemas (não alcançáveis).
+**R3→R4 (allowlist de funções):** o `rev-seguranca` bloqueou de novo — mesmo com
+comentário/aspas rejeitados, `schema_to_xml('net', true, false, '')` passa (o schema vai
+como **literal de string**, sem ponto qualificador) e **retornou o conteúdo real de
+`net._http_response`** ao vivo. Idem `database_to_xml`, `table_to_xml`, `query_to_xml`. É
+a mesma classe da R2: "existe mais uma forma de nomear um schema" — agora como argumento
+de função. Correção: a guarda passou de **blocklist** para **allowlist de chamadas de
+função** (default-deny) — rejeita qualquer `nome(` que não esteja numa lista fixa de
+funções analíticas seguras. Testado: 10 consultas legítimas passam; `schema_to_xml`,
+`database_to_xml`, `table_to_xml`, `query_to_xml`, `dblink`, `current_setting`,
+`pg_read_file`, `generate_series` barram.
 
-Verificações novas no `fase-1-seguranca.md` "Como verificar" (5b–5e, 10b, 12).
+Guardas finais (função + `validarSqlGeminiOuFalhar`), em ordem:
+1. **Rejeita comentário (`--` `/*` `*/`) e aspas (`"`)** — sã, não parseia SQL.
+2. **Rejeita schema fora de `public`** e **qualquer `pg_*`** (qualificado ou não).
+3. **ALLOWLIST de funções** (default-deny) — a contenção sã que o blocklist não deu.
+
+**`REVOKE USAGE ON SCHEMA net FROM PUBLIC` é provado impossível para nós.** Testei ao vivo
+(com restore): `postgres` executa o `REVOKE` **sem erro**, mas é **no-op silencioso** — o
+`nspacl` de `net` fica intacto (`=U/supabase_admin`; o concedente é `supabase_admin`, e
+`postgres` não é superuser/membro/concedente) e a role continua lendo `net._http_response`.
+Só um chamado ao suporte Supabase fecha na origem. A migração ainda tenta (no-op inofensivo)
+e o chamado fica registrado; a contenção real é a allowlist.
+
+Verificações novas no `fase-1-seguranca.md` "Como verificar" (5b–5h, 10b, 12).
+
+## Escalonamento (3× BLOQUEADO do `rev-seguranca`)
+
+Conforme `revisores.md` §6, a decisão vai ao usuário. Situação apresentada:
+- a cada rodada o `rev-seguranca` achou **um** novo jeito de nomear/alcançar `net.*`
+  (qualificado → aspas → comentário aninhado / `--` em literal → `schema_to_xml`);
+- a correção sã (allowlist de funções, default-deny) fecha a **classe** inteira, não só
+  o caso da vez;
+- o fecho na origem (`REVOKE … FROM PUBLIC`) **não é executável por nós** — só via suporte
+  Supabase, sem prazo/garantia;
+- o dado em risco: artefatos de chamadas HTTP de saída do `pg_net` (`net._http_response`
+  / `http_request_queue`) — checar se o `pg_net` do GECOPE carrega segredo.
+
+Opções para o usuário: (a) aceitar a allowlist como contenção + abrir o chamado Supabase
+em paralelo, seguir para F2; (b) travar a F1 até o chamado Supabase concluir; (c) pedir
+mais uma rodada do `rev-seguranca` sobre a allowlist antes de decidir.
 
 ## Buraco G (rev-correcao, follow-up promovido a item de fase) — CORRIGIDO
 

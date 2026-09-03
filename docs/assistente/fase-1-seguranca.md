@@ -27,16 +27,23 @@ Transacional e idempotente. Contém:
 - **B** — `CREATE OR REPLACE FUNCTION executar_consulta_ia` com o blocklist usando `\y`
   (mesma lista de palavras, só o operador de borda muda). Corpo base = `pg_get_functiondef`
   da função em produção em 2026-09-03; diffs listados no cabeçalho do `.sql`.
-- **C** — a guarda **rejeita de saída** qualquer SQL cujo texto contenha comentário
-  (`--`, `/*`, `*/`) ou aspas de identificador (`"`), **antes** das outras checagens.
-  Normalizar por regex (tirar comentário/aspas) **não é são** — comentário aninhado
-  (`/*/**/*/`, que o Postgres trata como um só) e `--` dentro de literal de string furam,
-  e as duas primeiras versões da F1 vazaram por aí. SQL analítico gerado pelo modelo não
-  usa nenhum dos três; `schema_prompt.ts` passou a instruir isso. Com o texto
-  garantidamente sem comentário/aspas, os regex seguintes rejeitam: schema fora de
-  `public` (`net`, `cron`, `extensions`, `auth`, `storage`, `vault`, `information_schema`,
-  …); **qualquer** identificador `pg_*` (qualificado ou não); `dblink` / `current_setting`
-  / `set_config` / `lo_import` / `lo_export`. Espelhado no `validarSqlGeminiOuFalhar`.
+- **C** — três guardas, nas duas camadas (função + `validarSqlGeminiOuFalhar`), nesta
+  ordem:
+  1. **Rejeita de saída** qualquer SQL com comentário (`--`, `/*`, `*/`) ou aspas de
+     identificador (`"`). Normalizar por regex **não é são** (comentário aninhado
+     `/*/**/*/`, `--` dentro de literal furam — as rodadas 1–2 do `rev-seguranca`
+     vazaram por aí). O modelo é instruído a não usá-los (`schema_prompt.ts`).
+  2. Rejeita referência a schema fora de `public` e **qualquer** identificador `pg_*`
+     (qualificado ou não).
+  3. **ALLOWLIST de chamadas de função (default-deny)** — rejeita qualquer `nome(` que
+     não esteja numa lista fixa de funções analíticas seguras (agregações, janelas,
+     texto, data, `cast`/`coalesce`/…). Fecha, de uma vez, `schema_to_xml` /
+     `database_to_xml` / `table_to_xml` / `query_to_xml` (que a rodada 3 do
+     `rev-seguranca` usou para dumpar `net._http_response` passando o schema como
+     **string**, sem ponto), `dblink`, `current_setting`, `set_config`, `lo_import`,
+     `lo_export`, `pg_read_file`, `generate_series` — e qualquer função futura. É a
+     contenção sã que o blocklist não deu (furado 3×). Testado: 10 consultas analíticas
+     legítimas passam, 8 vetores de ataque barram.
 - **C — `REVOKE ... FROM PUBLIC` no schema `net`** (buraco na origem): tentado por padrão
   na migração, **dentro de um bloco que não aborta se falhar**. O SQL Editor roda como
   `postgres`, que **não** é superuser nem membro de `supabase_admin` (o concedente do
@@ -151,7 +158,10 @@ usuário preferir mover.
 | 5c2 | `executar_consulta_ia('select 1 from net/*/**/*/._http_response')` (comentário aninhado) | ERRO "Comentário SQL ou identificador entre aspas" |
 | 5c3 | `executar_consulta_ia($$select 1 where 'x'='--' union select 1 from net._http_response$$) ` (`--` em literal) | ERRO "Comentário SQL ou identificador entre aspas" |
 | 5d | `executar_consulta_ia('select 1 from pg_roles')` (catálogo não-qualificado) | ERRO "catálogo do sistema" |
-| 5e | `executar_consulta_ia($$select current_setting('is_superuser')$$)` | ERRO "Função não permitida" |
+| 5e | `executar_consulta_ia($$select current_setting('is_superuser')$$)` | ERRO "Função não permitida na consulta: current_setting" |
+| 5f | `executar_consulta_ia($$select schema_to_xml('net', true, false, '')$$)` | ERRO "Função não permitida na consulta: schema_to_xml" |
+| 5g | `executar_consulta_ia($$select database_to_xml(true,false,'')$$)` | ERRO "Função não permitida na consulta: database_to_xml" |
+| 5h | `executar_consulta_ia($$select query_to_xml('select 1 from net._http_response',true,false,'')$$)` | ERRO "Função não permitida na consulta: query_to_xml" |
 | 6 | `executar_consulta_ia('select count(*) from contratos_edificacao')` | retorna ~352 — **não 0** (buraco G) |
 | 6b | `executar_consulta_ia` com join contrato+ficha (consulta legítima do assistente) | retorna linhas |
 | 7 | `POST` na Edge Function com `Authorization: Bearer <anon key>` | `401`, `origem: "sessao"` |

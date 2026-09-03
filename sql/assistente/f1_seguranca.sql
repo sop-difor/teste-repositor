@@ -14,8 +14,10 @@
 --     modelo não usa nenhum dos três; o schema_prompt instrui isso;
 --   * guarda nova: proíbe referência a schema fora de 'public' e a catálogo
 --     do sistema (pg_*), qualificado ou não;
---   * guarda nova: proíbe dblink / current_setting / set_config / lo_import /
---     lo_export.
+--   * guarda nova: ALLOWLIST de chamadas de função (default-deny) — só funções
+--     analíticas conhecidas; rejeita schema_to_xml / database_to_xml /
+--     table_to_xml / query_to_xml / dblink / current_setting / set_config /
+--     lo_import / lo_export / pg_read_file / generate_series e qualquer outra.
 --   O guard de LIMIT ('\blimit\s+\d+') fica INTOCADO — o LIMIT duplicado é bug
 --   de COMPORTAMENTO, corrigido e testado na F2.
 --
@@ -43,6 +45,33 @@ language plpgsql
 security definer
 set search_path to 'public'
 as $function$
+declare
+  -- ALLOWLIST de nomes que podem aparecer como 'nome(' — funções analíticas
+  -- seguras + palavras-chave SQL que precedem parêntese. Qualquer outro
+  -- 'identificador(' é rejeitado (default-deny).
+  funcoes_ok text[] := array[
+    'select','from','where','and','or','not','in','exists','on','over','filter',
+    'values','case','when','by','all','any','some','using','as','into','distinct',
+    'order','group','having','limit','offset','union','intersect','except','join',
+    'cross','inner','left','right','full','outer','natural','lateral','within',
+    'returning','partition','rows','range','between','ilike','like','similar',
+    'count','sum','avg','min','max','stddev','stddev_pop','stddev_samp','variance',
+    'var_pop','var_samp','corr','mode','percentile_cont','percentile_disc',
+    'row_number','rank','dense_rank','percent_rank','cume_dist','ntile','lag','lead',
+    'first_value','last_value','nth_value','bool_and','bool_or','every',
+    'string_agg','array_agg','json_agg','jsonb_agg',
+    'round','trunc','ceil','ceiling','floor','abs','sign','mod','power','sqrt','div',
+    'greatest','least',
+    'lower','upper','initcap','trim','btrim','ltrim','rtrim','length','char_length',
+    'character_length','octet_length','substr','substring','lpad','rpad','position',
+    'strpos','replace','translate','concat','concat_ws','format','split_part','starts_with',
+    'to_char','to_date','to_number','to_timestamp','date_trunc','date_part','extract',
+    'age','now','current_date','current_time','current_timestamp','localtime',
+    'localtimestamp','make_date','make_timestamp','justify_days','justify_hours',
+    'justify_interval',
+    'cast','coalesce','nullif','nvl'
+  ];
+  fn_proibidas text;
 begin
   sql_consulta := regexp_replace(trim(sql_consulta), ';\s*$', '');
 
@@ -82,9 +111,18 @@ begin
     raise exception 'Referência a catálogo do sistema não é permitida';
   end if;
 
-  -- F1: funções de leitura de ambiente / ponte externa.
-  if sql_consulta ~* '\y(dblink|current_setting|set_config|lo_import|lo_export)\y' then
-    raise exception 'Função não permitida detectada na consulta';
+  -- F1: ALLOWLIST de chamadas de função (default-deny). Rejeita qualquer
+  -- 'identificador(' que não esteja em funcoes_ok. Fecha, de uma vez,
+  -- schema_to_xml / database_to_xml / table_to_xml / query_to_xml / dblink /
+  -- current_setting / set_config / lo_import / lo_export e qualquer função
+  -- futura que sirva de canal de exfiltração — sem blocklist com sempre um caso
+  -- a mais. (O rev-seguranca furou o blocklist 3x; este é o fecho são.)
+  select string_agg(distinct g[1], ', ')
+    into fn_proibidas
+    from regexp_matches(lower(sql_consulta), '([a-z_][a-z0-9_]+)\s*\(', 'g') as m(g)
+    where g[1] <> all (funcoes_ok);
+  if fn_proibidas is not null then
+    raise exception 'Função não permitida na consulta: %', fn_proibidas;
   end if;
 
   -- >>> F2 corrige o '\b' abaixo (-> '\y') e o caso de LIMIT pré-existente. <<<
@@ -101,30 +139,37 @@ revoke execute on function public.executar_consulta_ia(text) from public;
 grant  execute on function public.executar_consulta_ia(text) to service_role;
 
 -- ----------------------------------------------------------------------------
--- C-origem) Best-effort: revogar o acesso de PUBLIC ao schema net e às tabelas
---    do pg_net. O concedente é 'supabase_admin' e o SQL Editor roda como
---    'postgres' (não superuser, não membro de supabase_admin), então isto
---    PODE falhar — não aborta a migração; a guarda da função acima é a
---    proteção efetiva. Se falhar e você quiser fechar na origem, abra chamado
---    no suporte Supabase pedindo:
+-- C-origem) Revogar o acesso de PUBLIC ao schema net e às tabelas do pg_net.
+--    TESTADO (2026-09-03, com restore): rodando como 'postgres' (não superuser,
+--    não membro de supabase_admin, que é o CONCEDENTE), o REVOKE executa SEM
+--    ERRO mas é NO-OP SILENCIOSO — o nspacl de 'net' fica intacto e a role
+--    continua lendo net._http_response. Ou seja: NÃO dá para fechar na origem
+--    daqui. A contenção efetiva é a ALLOWLIST de funções na função acima
+--    (rejeita schema_to_xml / database_to_xml / query_to_xml / dblink / ...).
+--
+--    PARA FECHAR NA ORIGEM (defesa em profundidade): abrir chamado no suporte
+--    Supabase pedindo, com a conta supabase_admin:
 --        REVOKE USAGE ON SCHEMA net FROM PUBLIC;
 --        REVOKE ALL ON net._http_response, net.http_request_queue FROM PUBLIC;
---    (todos os papéis nomeados — anon, authenticated, service_role, postgres,
---     supabase_functions_admin — têm USAGE PRÓPRIO em net e NÃO são afetados.)
+--        (opcional) REVOKE USAGE ON SCHEMA information_schema FROM PUBLIC;
+--    anon / authenticated / service_role / postgres / supabase_functions_admin
+--    têm USAGE PRÓPRIO em net e NÃO são afetados — só gecope_ia_readonly perde.
+--    Conferir depois: has_schema_privilege('gecope_ia_readonly','net','usage') = false
+--
+--    O bloco abaixo tenta assim mesmo (registra no NOTICE se foi no-op).
 -- ----------------------------------------------------------------------------
 do $$
 begin
   begin
     execute 'revoke usage on schema net from public';
-    raise notice 'F1: revoke usage on schema net from public — OK';
-  exception when others then
-    raise notice 'F1: revoke usage on schema net from public FALHOU (%) — guarda da função cobre.', sqlerrm;
-  end;
-  begin
     execute 'revoke all on net._http_response, net.http_request_queue from public';
-    raise notice 'F1: revoke all on net.* from public — OK';
+    if has_schema_privilege('gecope_ia_readonly','net','usage') then
+      raise notice 'F1: REVOKE no schema net foi NO-OP (concedente = supabase_admin). Abrir chamado no suporte. Contencao = allowlist de funcoes.';
+    else
+      raise notice 'F1: REVOKE no schema net aplicado — gecope_ia_readonly perdeu USAGE em net.';
+    end if;
   exception when others then
-    raise notice 'F1: revoke all on net.* from public FALHOU (%) — guarda da função cobre.', sqlerrm;
+    raise notice 'F1: REVOKE no schema net falhou (%). Contencao = allowlist de funcoes.', sqlerrm;
   end;
 end $$;
 

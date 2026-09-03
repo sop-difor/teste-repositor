@@ -52,11 +52,34 @@ function paraTextoSeguro(valor: unknown): string {
 // ---------------------------------------------------------------------------
 // Validação da consulta gerada pelo Gemini — camada extra, além da que já
 // existe dentro da função executar_consulta_ia no Postgres (defesa em
-// profundidade: mesmo que uma camada falhe, a outra ainda bloqueia).
+// profundidade). Rejeita de saída comentário/aspas; ALLOWLIST de funções.
 // ---------------------------------------------------------------------------
-// Espelha, em JS, as guardas da função executar_consulta_ia (defesa em
-// profundidade). Rejeita de saída SQL com comentário ou aspas de identificador
-// — normalizar por regex não é são (comentário aninhado, `--` dentro de literal).
+
+// Nomes que podem aparecer como `nome(` — funções analíticas seguras + palavras
+// -chave SQL que precedem parêntese. Espelha funcoes_ok da função SQL.
+const FUNCOES_OK = new Set([
+  "select","from","where","and","or","not","in","exists","on","over","filter",
+  "values","case","when","by","all","any","some","using","as","into","distinct",
+  "order","group","having","limit","offset","union","intersect","except","join",
+  "cross","inner","left","right","full","outer","natural","lateral","within",
+  "returning","partition","rows","range","between","ilike","like","similar",
+  "count","sum","avg","min","max","stddev","stddev_pop","stddev_samp","variance",
+  "var_pop","var_samp","corr","mode","percentile_cont","percentile_disc",
+  "row_number","rank","dense_rank","percent_rank","cume_dist","ntile","lag","lead",
+  "first_value","last_value","nth_value","bool_and","bool_or","every",
+  "string_agg","array_agg","json_agg","jsonb_agg",
+  "round","trunc","ceil","ceiling","floor","abs","sign","mod","power","sqrt","div",
+  "greatest","least",
+  "lower","upper","initcap","trim","btrim","ltrim","rtrim","length","char_length",
+  "character_length","octet_length","substr","substring","lpad","rpad","position",
+  "strpos","replace","translate","concat","concat_ws","format","split_part","starts_with",
+  "to_char","to_date","to_number","to_timestamp","date_trunc","date_part","extract",
+  "age","now","current_date","current_time","current_timestamp","localtime",
+  "localtimestamp","make_date","make_timestamp","justify_days","justify_hours",
+  "justify_interval",
+  "cast","coalesce","nullif","nvl",
+]);
+
 function validarSqlGeminiOuFalhar(sql: string): void {
   const s = sql.trim();
 
@@ -72,9 +95,7 @@ function validarSqlGeminiOuFalhar(sql: string): void {
   if (/;\s*\S/.test(s)) {
     throw new Error("Mais de uma instrução detectada — bloqueada.");
   }
-  // F1: nenhuma referência a schema fora de 'public'. gecope_ia_readonly tem
-  // USAGE em 'net' (herdado de PUBLIC) e net._http_response pode conter tokens
-  // de chamadas HTTP de saída do pg_net.
+  // F1: nenhuma referência a schema fora de 'public'.
   if (/\b(net|cron|extensions|auth|storage|vault|graphql|graphql_public|realtime|pgsodium|pgbouncer|pg_temp|pg_toast|information_schema|supabase_migrations|supabase_functions|_analytics|_realtime)\s*\./i.test(s)) {
     throw new Error("Consulta gerada referencia schema fora de public — bloqueada.");
   }
@@ -82,9 +103,12 @@ function validarSqlGeminiOuFalhar(sql: string): void {
   if (/\bpg_[a-z0-9_]+/i.test(s)) {
     throw new Error("Consulta gerada referencia catálogo do sistema — bloqueada.");
   }
-  // F1: funções de leitura de ambiente / ponte externa.
-  if (/\b(dblink|current_setting|set_config|lo_import|lo_export)\b/i.test(s)) {
-    throw new Error("Função não permitida detectada na consulta gerada — bloqueada.");
+  // F1: ALLOWLIST de chamadas de função (default-deny). Fecha schema_to_xml /
+  // database_to_xml / dblink / current_setting / … e qualquer função futura.
+  for (const m of s.toLowerCase().matchAll(/([a-z_][a-z0-9_]+)\s*\(/g)) {
+    if (!FUNCOES_OK.has(m[1])) {
+      throw new Error(`Função não permitida na consulta gerada: ${m[1]} — bloqueada.`);
+    }
   }
 }
 
