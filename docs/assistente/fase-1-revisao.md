@@ -8,8 +8,8 @@ raciocínio + sondagens de leitura via Supabase MCP.
 
 | Lente | R1 | R2 | R3 | R4 |
 |---|---|---|---|---|
-| `rev-seguranca` | **BLOQUEADO** (aspas/comentário) | **BLOQUEADO** (normalização não é sã) | **BLOQUEADO** (`schema_to_xml('net',…)` — schema como string, sem ponto) | _pendente decisão do usuário (3× BLOQUEADO → escalonamento)_ |
-| `rev-correcao` | **APROVADO** | **APROVADO** (buraco G verificado em prod) | **APROVADO** (rejeição comentário/aspas, 0 falso-positivo) | _re-submeter (allowlist de funções)_ |
+| `rev-seguranca` | **BLOQUEADO** (aspas/comentário) | **BLOQUEADO** (normalização não é sã) | **BLOQUEADO** (`schema_to_xml('net',…)` — schema como string, sem ponto) | **APROVADO** — allowlist é sã; nenhum caminho ao conteúdo de `net._http_response`. Follow-ups (`::reg*`, niládicas, falso-positivo `date()`/`regexp_replace()`) incorporados no commit seguinte. |
+| `rev-correcao` | **APROVADO** | **APROVADO** (buraco G verificado em prod) | **APROVADO** (rejeição comentário/aspas, 0 falso-positivo) | — (allowlist só endurece / remove falso-positivo) |
 | `rev-produto` | **APROVADO** | — | — | — |
 | `rev-aderencia` | **APROVADO** | — | — | — |
 
@@ -96,7 +96,11 @@ mais uma rodada do `rev-seguranca` sobre a allowlist antes de decidir.
 **Decisão do usuário (03/09/2026): (a)** — allowlist aceita como contenção; chamado ao
 suporte Supabase aberto em paralelo (não bloqueante). E **(i)** para o buraco G: o piloto
 (equipe GECOPE + gestores) aceita `USING (true)`; filtro por identidade fica para a F5.
-Uma rodada R4 do `rev-seguranca` roda mesmo assim, como conferência (não trava).
+
+**Rodada R4 (conferência) do `rev-seguranca`: APROVADO.** A allowlist é sã — nenhum
+caminho ao **conteúdo** de `net._http_response` sobrevive. Follow-ups FU-55..59 (vazamento
+só de metadados + falso-positivos) incorporados. **F1: 4/4 APROVADO — pronta para o
+sign-off do usuário.**
 
 ## Buraco G (rev-correcao, follow-up promovido a item de fase) — CORRIGIDO
 
@@ -127,6 +131,12 @@ doc reforçadas para exigir contagem real (> 0).
 | FU-49 (R2) | Chamado ao suporte Supabase (`REVOKE … FROM PUBLIC` no `net`) deve ser **item de fase**, não comentário opcional | **Feito**: passo 3 da "Ordem de aplicação", marcado como não-opcional |
 | FU-50 (R2) | Policy `USING (true)` do buraco G em `processos` dá a um "fiscal" do piloto visão de todos os processos (ignora `fiscal_matricula`) | **Registrado** em `fase-1-seguranca.md` §G — a confirmar no sign-off; filtro por identidade é F5 |
 | FU-51 (R2) | `revisores.md` lente 1: trocar "testar contra" por "normalização sã (tokenizer-aware) OU rejeitar o token"; citar comentário aninhado e `--` em literal | **Feito**: lente 1 atualizada |
+| FU-54 (R3) | `schema_to_xml('net',…)` / `database_to_xml` / `table_to_xml` / `query_to_xml` — schema como string, sem ponto → dumpava `net._http_response` | **Feito (R4)**: guarda virou **allowlist de funções** default-deny; essas e qualquer futura barram |
+| FU-55 (R4) | Cast `::reg*` sobre string construída revela nome/OID de objeto arbitrário (metadado) | **Feito**: guarda `::\s*reg[a-z]+` / `\yreg(class\|role\|namespace\|…)\y` nas duas camadas |
+| FU-56 (R4) | Niládicas `current_user`/`current_catalog`/`session_user` revelam role/db/schema (metadado) | **Feito**: guarda de identidade nas duas camadas |
+| FU-57 (R4) | Allowlist recusava `date()`, `regexp_replace()` e ~35 funções seguras comuns | **Feito**: `funcoes_ok`/`FUNCOES_OK` ampliada (regexp\_\*, casts em forma de função, json\_\*, array\_\*, encode/md5, …); testado sem falso-positivo |
+| FU-58 (R4) | Doc "REVOKE … provavelmente falha" desatualizado (é no-op silencioso testado) | **Feito**: `fase-1-seguranca.md` §C e passo 2 reescritos |
+| FU-59 (R4) | `revisores.md` lente 1 sem linha sobre allowlist vs blocklist | **Feito** |
 
 ### rev-produto
 
@@ -172,9 +182,15 @@ doc reforçadas para exigir contagem real (> 0).
   produção salvo os deltas intencionais; commit só toca arquivos do assistente;
   `git grep "eyJ" assistente.html` limpo.
 
-## Situação
+## Situação — F1 PRONTA PARA SIGN-OFF
 
-F1 **não liberada**. `rev-produto` e `rev-aderencia` aprovaram a rodada 1. `rev-correcao`
-aprovou sem bloqueios (rodada 1) mas expôs o buraco G, agora corrigido. `rev-seguranca`
-bloqueou (bypass da guarda), corrigido. Re-submissão de `rev-seguranca` **e** `rev-correcao`
-sobre o commit da correção. Encerra com **sign-off do usuário** (aplica o SQL).
+**4/4 revisores `APROVADO`** (`rev-seguranca` após 3 bloqueios + escalonamento + R4 de
+conferência; `rev-correcao` R1–R3; `rev-produto` e `rev-aderencia` R1). Falta:
+1. usuário aplica `sql/assistente/f1_seguranca.sql` no projeto `qexdnxqmiaarzwwwrcor`;
+2. usuário autoriza o deploy da Edge Function (`supabase functions deploy gecope-assistant`);
+3. usuário abre o chamado ao suporte Supabase (`REVOKE … FROM PUBLIC` no `net`) — em
+   paralelo, não bloqueia F2;
+4. sign-off registrado → F1 concluída, segue para **F2**.
+
+Follow-ups para fases futuras: FU-28/44/45/46 (F2), FU-35 (F2/F5/F6), FU-50 (F5 — filtro
+por identidade), FU-39 (F8 — tema/paleta).

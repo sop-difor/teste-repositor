@@ -50,7 +50,7 @@ devolverem `APROVADO`. `BLOQUEADO` volta para correção na mesma fase. Duas rod
 | Fase | Situação |
 |---|---|
 | F0 | **concluída** — 4/4 revisores `APROVADO` ([`fase-0-revisao.md`](fase-0-revisao.md)) |
-| F1 | **em revisão** — blindagem de segurança ([`fase-1-seguranca.md`](fase-1-seguranca.md)); encerra com sign-off do usuário |
+| F1 | **pronta para sign-off** — 4/4 `APROVADO` ([`fase-1-revisao.md`](fase-1-revisao.md)); aguarda o usuário aplicar o `.sql` + deploy + chamado Supabase |
 | F2–F8 | não iniciadas |
 
 ## Diagnóstico que motivou a iniciativa (03/09/2026)

@@ -73,10 +73,18 @@ const FUNCOES_OK = new Set([
   "lower","upper","initcap","trim","btrim","ltrim","rtrim","length","char_length",
   "character_length","octet_length","substr","substring","lpad","rpad","position",
   "strpos","replace","translate","concat","concat_ws","format","split_part","starts_with",
-  "to_char","to_date","to_number","to_timestamp","date_trunc","date_part","extract",
-  "age","now","current_date","current_time","current_timestamp","localtime",
-  "localtimestamp","make_date","make_timestamp","justify_days","justify_hours",
-  "justify_interval",
+  "reverse","repeat","overlay","md5","encode","decode","chr","ascii","left","right",
+  "string_to_array","array_to_string","array_length","cardinality","unnest",
+  "regexp_replace","regexp_match","regexp_matches","regexp_count","regexp_split_to_array",
+  "to_char","to_date","to_number","to_timestamp","date_trunc","date_part","date_bin",
+  "extract","age","now","current_date","current_time","current_timestamp","localtime",
+  "localtimestamp","make_date","make_timestamp","make_interval","justify_days",
+  "justify_hours","justify_interval",
+  "date","time","timestamp","interval","numeric","int","int4","int8","bigint","integer",
+  "text","varchar","bool","boolean","real","float","double",
+  "exp","ln","log","width_bucket",
+  "to_json","to_jsonb","json_build_object","jsonb_build_object","row_to_json",
+  "json_object_agg","jsonb_object_agg",
   "cast","coalesce","nullif","nvl",
 ]);
 
@@ -102,6 +110,14 @@ function validarSqlGeminiOuFalhar(sql: string): void {
   // F1: nenhum identificador de catálogo do sistema, qualificado ou não.
   if (/\bpg_[a-z0-9_]+/i.test(s)) {
     throw new Error("Consulta gerada referencia catálogo do sistema — bloqueada.");
+  }
+  // F1 (R4): cast ::reg* sobre string construída revela nome/OID de objeto.
+  if (/::\s*reg[a-z]+/i.test(s) || /\breg(class|role|namespace|proc|procedure|type|oper|operator|config|dictionary)\b/i.test(s)) {
+    throw new Error("Consulta gerada usa cast para tipo de catálogo (reg*) — bloqueada.");
+  }
+  // F1 (R4): funções niládicas de identidade revelam role/db/schema.
+  if (/\b(current_catalog|current_role|current_user|current_schema|session_user|system_user)\b/i.test(s)) {
+    throw new Error("Consulta gerada referencia identidade da sessão — bloqueada.");
   }
   // F1: ALLOWLIST de chamadas de função (default-deny). Fecha schema_to_xml /
   // database_to_xml / dblink / current_setting / … e qualquer função futura.

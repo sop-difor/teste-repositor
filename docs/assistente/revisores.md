@@ -68,9 +68,13 @@ Confere, conforme a fase:
 - **Guardas por regex**: a contenção não pode depender de "normalizar" o SQL por regex —
   isso não é são (comentário **aninhado** `/*/**/*/`, marcador `--` **dentro de literal**
   de string furam). Ou a análise é tokenizer-aware, ou o SQL com `--` / `/*` / `"` é
-  **rejeitado de saída**. Testar contra: aspas (`"net"."x"`), comentário simples e
-  aninhado, `--` em literal (`'x--' union … from net.x`), catálogo não-qualificado
-  (`pg_roles`). As duas camadas (função + Edge) não podem compartilhar o mesmo ponto cego.
+  **rejeitado de saída**. A contenção de funções é **allowlist default-deny**, não
+  blocklist — blocklist sempre tem mais um caso (na F1 o `rev-seguranca` furou 3×:
+  qualificado → aspas → comentário aninhado → `schema_to_xml`). Testar contra: aspas
+  (`"net"."x"`), comentário simples e aninhado, `--` em literal, catálogo não-qualificado
+  (`pg_roles`), `schema_to_xml`/`query_to_xml`, cast `::reg*` sobre string construída,
+  niládicas de identidade (`current_user`). As duas camadas (função + Edge) não podem
+  compartilhar o mesmo ponto cego.
 - Exposição via PostgREST: `executar_consulta_ia` **não** executável por `anon` /
   `authenticated` (a partir da F1).
 - Identidade: `usuario` derivado do JWT no servidor, nunca do corpo (a partir da F1).

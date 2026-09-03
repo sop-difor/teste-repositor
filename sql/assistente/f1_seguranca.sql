@@ -65,10 +65,18 @@ declare
     'lower','upper','initcap','trim','btrim','ltrim','rtrim','length','char_length',
     'character_length','octet_length','substr','substring','lpad','rpad','position',
     'strpos','replace','translate','concat','concat_ws','format','split_part','starts_with',
-    'to_char','to_date','to_number','to_timestamp','date_trunc','date_part','extract',
-    'age','now','current_date','current_time','current_timestamp','localtime',
-    'localtimestamp','make_date','make_timestamp','justify_days','justify_hours',
-    'justify_interval',
+    'reverse','repeat','overlay','md5','encode','decode','chr','ascii','left','right',
+    'string_to_array','array_to_string','array_length','cardinality','unnest',
+    'regexp_replace','regexp_match','regexp_matches','regexp_count','regexp_split_to_array',
+    'to_char','to_date','to_number','to_timestamp','date_trunc','date_part','date_bin',
+    'extract','age','now','current_date','current_time','current_timestamp','localtime',
+    'localtimestamp','make_date','make_timestamp','make_interval','justify_days',
+    'justify_hours','justify_interval',
+    'date','time','timestamp','interval','numeric','int','int4','int8','bigint','integer',
+    'text','varchar','bool','boolean','real','float','double',
+    'exp','ln','log','width_bucket',
+    'to_json','to_jsonb','json_build_object','jsonb_build_object','row_to_json',
+    'json_object_agg','jsonb_object_agg',
     'cast','coalesce','nullif','nvl'
   ];
   fn_proibidas text;
@@ -109,6 +117,17 @@ begin
   -- pg_stat_activity, pg_read_file, pg_sleep, ...), qualificado ou não.
   if sql_consulta ~* '\ypg_[a-z0-9_]+' then
     raise exception 'Referência a catálogo do sistema não é permitida';
+  end if;
+
+  -- F1 (R4): cast '::reg*' sobre string construída revela nome/OID de objeto
+  -- arbitrário (ex.: (concat('n','et','.','_http_response'))::regclass).
+  if sql_consulta ~* '::\s*reg[a-z]+' or sql_consulta ~* '\yreg(class|role|namespace|proc|procedure|type|oper|operator|config|dictionary)\y' then
+    raise exception 'Cast para tipo de catálogo (reg*) não é permitido';
+  end if;
+
+  -- F1 (R4): funções niládicas de identidade (sem parêntese) revelam role/db/schema.
+  if sql_consulta ~* '\y(current_catalog|current_role|current_user|current_schema|session_user|system_user)\y' then
+    raise exception 'Referência a identidade da sessão não é permitida';
   end if;
 
   -- F1: ALLOWLIST de chamadas de função (default-deny). Rejeita qualquer

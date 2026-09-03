@@ -42,16 +42,22 @@ Transacional e idempotente. Contém:
      `rev-seguranca` usou para dumpar `net._http_response` passando o schema como
      **string**, sem ponto), `dblink`, `current_setting`, `set_config`, `lo_import`,
      `lo_export`, `pg_read_file`, `generate_series` — e qualquer função futura. É a
-     contenção sã que o blocklist não deu (furado 3×). Testado: 10 consultas analíticas
-     legítimas passam, 8 vetores de ataque barram.
-- **C — `REVOKE ... FROM PUBLIC` no schema `net`** (buraco na origem): tentado por padrão
-  na migração, **dentro de um bloco que não aborta se falhar**. O SQL Editor roda como
-  `postgres`, que **não** é superuser nem membro de `supabase_admin` (o concedente do
-  grant a `PUBLIC`) — então este `REVOKE` provavelmente falha, com `RAISE NOTICE`. **Item
-  de fase (não opcional):** se falhar, abrir chamado no suporte Supabase pedindo
+     contenção sã que o blocklist não deu (furado 3×). Testado: consultas analíticas
+     legítimas passam, todos os vetores de ataque das 4 rodadas barram.
+  4. **(R4)** rejeita cast `::reg*` (revela nome/OID a partir de string construída, ex.
+     `(concat('n','et'))::regnamespace`) e as funções niládicas de identidade
+     (`current_user`, `current_catalog`, `session_user`, …).
+- **C — `REVOKE ... FROM PUBLIC` no schema `net`** (buraco na origem): **testado
+  (2026-09-03, com restore) — não é executável por nós.** Rodando como `postgres` (não
+  superuser, não membro de `supabase_admin`, que é o concedente), o `REVOKE` roda **sem
+  erro** mas é **no-op silencioso**: o `nspacl` de `net` fica intacto e a role continua
+  lendo `net._http_response`. A migração tenta assim mesmo e o bloco `DO` **detecta o
+  no-op** (`has_schema_privilege`) e emite `RAISE NOTICE` "NO-OP". **Item de fase (não
+  opcional):** abrir chamado no suporte Supabase pedindo, com a conta `supabase_admin`,
   `REVOKE USAGE ON SCHEMA net FROM PUBLIC` + `REVOKE ALL ON net._http_response,
-  net.http_request_queue FROM PUBLIC` — é a defesa em profundidade real, além da guarda
-  da função. `anon`, `authenticated`, `service_role`, `postgres`,
+  net.http_request_queue FROM PUBLIC` — defesa em profundidade além da allowlist. `anon`,
+  `authenticated`, `service_role`, `postgres`, `supabase_functions_admin` têm `USAGE`
+  próprio e **não** são afetados — só `gecope_ia_readonly`. `anon`, `authenticated`, `service_role`, `postgres`,
   `supabase_functions_admin` têm `USAGE` próprio em `net` e **não** são afetados — só
   `gecope_ia_readonly` (que é o alvo). `pg_stat_statements` e `cron` **não** entram:
   `gecope_ia_readonly` não tem `USAGE` nesses schemas (não alcançáveis).
@@ -134,9 +140,9 @@ usuário preferir mover.
 ## Ordem de aplicação (o usuário faz)
 
 1. Revisar `sql/assistente/f1_seguranca.sql`.
-2. Aplicar no SQL Editor do projeto `qexdnxqmiaarzwwwrcor`. Ler as mensagens `NOTICE` do
-   bloco do `net` (deve dizer se o `REVOKE FROM PUBLIC` passou ou falhou — falhar é
-   esperado). Rodar o bloco de verificação.
+2. Aplicar no SQL Editor do projeto `qexdnxqmiaarzwwwrcor`. Esperado: `NOTICE` do bloco
+   do `net` dizendo **"NO-OP (concedente = supabase_admin)"** — isso é o esperado, não um
+   erro. Rodar o bloco de verificação.
 3. **Se o `REVOKE ... FROM PUBLIC` no `net` falhou** (o esperado): abrir chamado no
    suporte Supabase pedindo `REVOKE USAGE ON SCHEMA net FROM PUBLIC` +
    `REVOKE ALL ON net._http_response, net.http_request_queue FROM PUBLIC`. É item de fase
