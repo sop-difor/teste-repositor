@@ -8,10 +8,15 @@ raciocínio + sondagens de leitura via Supabase MCP.
 
 | Lente | Rodada 1 | Rodada 2 |
 |---|---|---|
-| `rev-seguranca` | **BLOQUEADO** | _(re-submissão após correção — commit `<pendente>`)_ |
-| `rev-correcao` | _(pendente)_ | — |
+| `rev-seguranca` | **BLOQUEADO** (bypass da guarda de schema) | _(re-submissão — commits `d0ae360` + `<G>`)_ |
+| `rev-correcao` | **APROVADO** (0 bloqueantes) | _(re-submissão — buraco G)_ |
 | `rev-produto` | **APROVADO** | — |
 | `rev-aderencia` | **APROVADO** | — |
+
+`rev-correcao` aprovou sem bloqueios, mas um dos seus follow-ups é grave o bastante para
+virar item de fase: **buraco G** (a RLS bloqueia a role de leitura → o caminho LLM
+devolve 0 linhas para tudo). Tratado na F1 (é configuração de acesso); re-submetido às
+duas lentes.
 
 ## Achado bloqueante (rev-seguranca, rodada 1) — CORRIGIDO
 
@@ -47,6 +52,20 @@ A afirmação do doc de que "a guarda da função já contém sem o `REVOKE`" er
 
 Verificações novas no `fase-1-seguranca.md` "Como verificar" (5b–5e, 10b, 12).
 
+## Buraco G (rev-correcao, follow-up promovido a item de fase) — CORRIGIDO
+
+`executar_consulta_ia` roda como `gecope_ia_readonly`. As 9 tabelas do escopo têm RLS com
+policies só para `anon`/`authenticated` — nenhuma para essa role. Provado ao vivo: a role
+lê **0 linhas** em 12 dos 13 objetos (`processos` 427→0, `contratos_edificacao` 352→0,
+`medicoes` 2944→0, …; as 4 views `security_invoker` herdam o bloqueio). Sem isto o caminho
+LLM responde "Nenhum resultado" para tudo — o item 6 do "Como verificar" (v1) passava com
+0, checagem fraca.
+
+**Correção (F1):** 9 policies `PERMISSIVE FOR SELECT TO gecope_ia_readonly USING (true)`,
+uma por tabela-base, em laço idempotente no `f1_seguranca.sql`. Rejeitada a alternativa
+`ALTER ROLE ... BYPASSRLS` (atributo amplo, menos auditável). Verificações 3, 3b e 6/6b do
+doc reforçadas para exigir contagem real (> 0).
+
 ## Follow-ups
 
 ### rev-seguranca
@@ -68,6 +87,18 @@ Verificações novas no `fase-1-seguranca.md` "Como verificar" (5b–5e, 10b, 12
 | FU-33 | "Flash" de UI funcional antes da porta fechar | **Feito**: entrada/botão/chips começam desabilitados; abrem só após confirmar sessão |
 | FU-34 | 429 e mensagens de sessão renderizavam como `.erro` vermelho; tom do 429 | **Feito na F1**: estilo `.aviso` (neutro); 429 = "Limite de 40 perguntas por hora atingido. Aguarde alguns minutos e continue." |
 | FU-35 | Lente rev-produto: para F2 checar contadores "N resultado(s)" após o fix do LIMIT; para F5/F6 "todo texto de parada com próximo passo acionável" e "vocabulário de badge compreensível" | Registrado para F2/F5/F6 (ainda não aplicado à `revisores.md` — anexar na abertura da F5) |
+
+### rev-correcao
+
+| # | Item | Resolução |
+|---|---|---|
+| FU-41 | **Buraco G** — RLS bloqueia a role de leitura (0 linhas em 12/13 objetos) | **Feito na F1**: 9 policies `PERMISSIVE FOR SELECT TO gecope_ia_readonly` (ver seção "Buraco G" acima) |
+| FU-42 | Guarda de schema contornável por aspas/comentário; `pg_class` não-qualificado passa | **Feito** (mesmo que o bloqueante do rev-seguranca): normalização + bloqueio de `pg_*` sem exigir `.` |
+| FU-43 | Drift entre a lista de schemas no `.sql` (`_analytics\|_realtime`) e no espelho JS | **Feito** no commit `d0ae360`: listas alinhadas |
+| FU-44 | `\blimit` duplicado reproduzido ao vivo (`... limit 3 limit 200` → 42601) | **F2** — escopo declarado |
+| FU-45 | `^select` rejeita CTE (`WITH ... SELECT`) | **F2** — quando a camada de validação for retrabalhada |
+| FU-46 | Log grava `pergunta=""`, `origem:"gemini"` quando `req.json()` falha (ruído) | **F2** — cosmético |
+| FU-47 | Rate limit TOCTOU + fail-open; item 6 do "Como verificar" passava com 0 (checagem fraca) | Registrado (piloto); "Como verificar" reforçado para exigir contagem > 0 |
 
 ### rev-aderencia
 
@@ -91,5 +122,7 @@ Verificações novas no `fase-1-seguranca.md` "Como verificar" (5b–5e, 10b, 12
 
 ## Situação
 
-F1 **não liberada** — aguarda `rev-correcao` (rodada 1) e a re-submissão do `rev-seguranca`
-sobre a correção do achado bloqueante. Encerra com **sign-off do usuário** (aplica o SQL).
+F1 **não liberada**. `rev-produto` e `rev-aderencia` aprovaram a rodada 1. `rev-correcao`
+aprovou sem bloqueios (rodada 1) mas expôs o buraco G, agora corrigido. `rev-seguranca`
+bloqueou (bypass da guarda), corrigido. Re-submissão de `rev-seguranca` **e** `rev-correcao`
+sobre o commit da correção. Encerra com **sign-off do usuário** (aplica o SQL).

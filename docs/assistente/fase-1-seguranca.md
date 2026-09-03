@@ -13,6 +13,7 @@ piloto ter o link. Encerra com **sign-off do usuário** (aplica o SQL em produç
 | **D** | `usuario` vem do corpo da requisição — falsificável. A anon key é aceita como `Authorization` (é um JWT válido), então o `verify_jwt` do painel não garante um usuário real. | Edge Function |
 | **E** | `assistente.html` embute a `SUPABASE_ANON_KEY` crua e a envia como `Authorization`. Sem exigir sessão do GECOPE. | Front-end |
 | **F** | `consultas_ia_log` guarda a pergunta do usuário, que pode conter nome de fiscal/analista (LGPD). | Banco / processo |
+| **G** | `executar_consulta_ia` roda como `gecope_ia_readonly` (SECURITY DEFINER), mas as 9 tabelas do escopo têm RLS ligada com policies só para `anon`/`authenticated` — **nenhuma** para essa role. RLS nega tudo: `select count(*) from contratos_edificacao` devolve **0** (a tabela tem 352). As 4 views são `security_invoker=true` e herdam o bloqueio. Sem isto, **todo** o caminho LLM responde "Nenhum resultado". Achado do `rev-correcao` na revisão da F1. | Banco |
 
 ## O que muda
 
@@ -43,9 +44,15 @@ Transacional e idempotente. Contém:
   próprio em `net` e **não** são afetados — só `gecope_ia_readonly` (que é o alvo).
   `pg_stat_statements` e `cron` **não** entram: confirmado que `gecope_ia_readonly` não
   tem `USAGE` nesses schemas, então não são alcançáveis (o `REVOKE` seria no-op).
+- **G** — 9 policies `PERMISSIVE FOR SELECT TO gecope_ia_readonly USING (true)`, uma por
+  tabela-base do escopo, aplicadas num laço idempotente (`drop policy if exists` antes).
+  Dá à role a leitura da lista branca que a RLS negava. Visível em `pg_policies`; não
+  toca policies de outros papéis (permissive = OR); as 4 views (`security_invoker`)
+  resolvem via as tabelas-base. Alternativa não adotada: `ALTER ROLE gecope_ia_readonly
+  BYPASSRLS` (mais curto, menos auditável, atributo amplo no papel).
 - **O guard de `LIMIT` (`\blimit\s+\d+`) fica INTOCADO de propósito.** O `LIMIT`
   duplicado é bug de **comportamento** — corrigido e testado na **F2**. A F1 só mexe na
-  camada de segurança.
+  camada de segurança / acesso.
 - Bloco de `ROLLBACK` comentado + bloco de verificação ao final (rodar fora da transação).
 
 Limitação assumida: mesmo com a normalização, as guardas são regex sobre o texto do SQL —
