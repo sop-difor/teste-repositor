@@ -52,6 +52,48 @@ achado do próprio trabalho, não só ser escrito antes e seguido à risca.
 | F-e | `rev-produto` | `casos.jsonl` não tem nenhum caso de gabarito fixo conferindo valor monetário formatado (`R$`, milhar) contra dado real — só contagens inteiras | F5, ao expandir os casos |
 | F-01 | `rev-seguranca` | Registrar como processo (não como regra rígida) que uma fase pode incorporar um achado do próprio trabalho realizado nela, com nota explícita, em vez de só documentar depois do fato | decisão do usuário, sem fase associada |
 
+## Snapshot `--llm` (04/09/2026) — informativo, não altera o veredito acima
+
+Com uma `GEMINI_API_KEY` nova, confirmados primeiro **sem gastar cota de geração**: os 3
+IDs de `GEMINI_MODELOS` (`gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`)
+existem e suportam `generateContent` (`GET /v1beta/models/<id>`) — **FU-77 fechada**.
+
+Ao rodar `deno task eval:llm` de verdade:
+
+```
+llm_dado           9/9/0   → 50%  (alvo 80%, informativo)
+llm_nao_sei        6/0/0   → 100% (alvo 90%, informativo)
+ambigua            0/4/0   → 0%   (alvo 90%, informativo)
+seguranca_prompt   1/0/0   → 100%
+```
+
+**Causa raiz identificada** (chamada direta à API, fora do wrapper, para ver o corpo do
+erro): `HTTP 429`, `RESOURCE_EXHAUSTED` —
+`generate_content_free_tier_requests`, **limite de 20 requisições/dia por modelo** numa
+chave recém-criada. O primeiro dos dois runs (29 chamadas reais, cada uma podendo tentar
+até 3 modelos com retry) esgotou a cota diária de `gemini-3.6-flash` e deixou
+`gemini-3.5-flash-lite` — o último da cadeia — genuinamente sobrecarregado (503) por
+volume geral do free tier no momento. Uma nova tentativa 20s depois, só com a categoria
+`ambigua`, deu o mesmo resultado (cota não se recompõe em segundos).
+
+**Isto confirma ao vivo o achado FU-b do `rev-correcao`**: `llm_nao_sei` mostrou 100%,
+mas por **degradação por cota esgotada**, não por recusa correta — a taxa agregada não
+distingue as duas coisas. Sem esse achado registrado na revisão, esse 100% teria sido
+lido como sinal de que a fronteira "não sei responder" funciona bem; na verdade o teste
+real dessa categoria não rodou.
+
+**Não bloqueia nada** (a categoria é informativa, acordado com o usuário) e não muda o
+veredito 4/4 da fase. Mas é um dado real para decisões futuras:
+- O free tier do Gemini tem cota **diária** baixa por modelo (20/dia numa chave nova) —
+  `provedor-llm.md` já previa que isso poderia "decepcionar" e cita Groq como plano B.
+  Vale reavaliar essa troca **antes** da F6 (prompt/produção), não depois.
+- Repetir `deno task eval:llm` amanhã (cota deveria renovar) daria um snapshot mais limpo
+  — não necessário para fechar F3, mas útil antes de decidir sobre o plano B.
+- Em produção, o piloto (~10–20 pessoas) pode esbarrar na mesma cota diária dependendo do
+  volume de perguntas que caem no caminho LLM — motivo a mais para a F5 (expandir o motor
+  de intenções) ser prioridade logo após o deploy: cada pergunta resolvida por intenção é
+  uma chamada a menos que disputa essa cota.
+
 ## Situação
 
 **F3 concluída, 4/4 APROVADO.** Portão determinístico verde: `intencao_exata` 14/14
@@ -59,10 +101,12 @@ achado do próprio trabalho, não só ser escrito antes e seguido à risca.
 limpo nos 5 módulos. Gabarito conferido de forma independente por duas pessoas (quem
 implementou e o `rev-correcao`), 16+ dos 34 casos numéricos, zero divergência.
 
+**FU-77 fechada** (04/09/2026): os 3 IDs de `GEMINI_MODELOS` confirmados via
+`GET /v1beta/models`. Snapshot `--llm` rodado (ver seção acima) — atingiu cota diária do
+free tier no meio do teste, informativo, não bloqueia.
+
 Pendente antes do deploy único (F1+F2+F3):
-1. **FU-77** — obter uma `GEMINI_API_KEY` utilizável (o secret do Supabase não pode ser
-   lido de volta), rodar `deno task eval:llm` 1× para o snapshot informativo, e confirmar
-   os 3 IDs de `GEMINI_MODELOS` contra `GET /v1beta/models`.
+1. ~~FU-77~~ — feita.
 2. `supabase functions deploy gecope-assistant` — sobe `index.ts` + `guards.ts` + `llm.ts`
    + `motor_intencoes.ts` (com o bugfix) + `schema_prompt.ts`. Cobre F1 (JWT real,
    allowlist), F2 (bug do LIMIT, cadeia de modelos, degradação) e o bugfix da F3.
