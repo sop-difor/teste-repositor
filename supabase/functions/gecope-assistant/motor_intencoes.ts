@@ -23,13 +23,11 @@ const STATUS_OBRA = {
 const STATUS_PROCESSO_FORA_TRAMITACAO = ["APROVADO", "ARQUIVADO", "EXCLUÍDO"];
 
 // F5: valores confirmados de tipo_aditivo (schema_dicionario.md) — usados por
-// aditivos_por_tipo para reconhecer qual tipo foi mencionado na pergunta.
-// Regra de ordem (achado do rev-produto na revisão): cada valor precisa vir
-// ANTES de qualquer outro valor da lista do qual ele seja substring — não é
-// "comprimento decrescente" estrito (ex.: "Alteração Contratual Diversa", 29
-// caracteres, vem depois de "Valor, vigência e execução", 27) — o que importa
-// é "Valor" não mascarar "Valor, vigência e execução", e "Vigência" não
-// mascarar "Vigência e execução".
+// aditivos_por_tipo para reconhecer qual tipo foi mencionado na pergunta,
+// via encontrarTipoAditivo() -> encontrarMencionado(), que reordena por
+// tamanho a cada chamada — a ordem física desta lista não importa mais para
+// a correção do casamento (era relevante antes da F5 rodada 2 delegar para
+// encontrarMencionado; mantida em ordem de leitura só por clareza).
 const TIPOS_ADITIVO = [
   "Valor, vigência e execução",
   "Alteração Contratual Diversa",
@@ -149,20 +147,62 @@ function encontrarTipoAditivo(pergunta: string): string | null {
 }
 
 /**
- * F5 (achado do rev-produto, revisão F5): true se a pergunta menciona um
- * distrito, contratada ou contratante conhecido. As intenções de "total
- * geral" (contagens/agregados sem parâmetro) chamam isto ANTES de responder
- * — se der true, devolvem null em vez de responder o total NACIONAL como se
- * fosse o recorte pedido. Cai para outra intenção mais específica (se
- * houver) ou para o caminho LLM, que tenta o filtro de verdade.
+ * F5 rodada 3 (achado consolidado dos 4 revisores): nas duas rodadas
+ * anteriores, cada bloqueio foi corrigido intenção por intenção (uma
+ * chamada manual dentro de cada `executar`), e a cada rodada os revisores
+ * achavam outra intenção com o mesmo problema que ninguém tinha lembrado de
+ * instrumentar. Em vez de continuar assim: cada intenção agora DECLARA quais
+ * qualificadores ela sabe de fato aplicar (`filtrosSuportados`, no objeto
+ * Intencao), e uma checagem central em `tentarIntencao` cede automaticamente
+ * (nem chega a chamar `executar`) sempre que a pergunta menciona um
+ * qualificador fora dessa lista — em vez de depender de cada intenção
+ * lembrar de se proteger sozinha. Fecha a classe inteira do problema de uma
+ * vez, inclusive casos que nenhum revisor relatou ainda (ex.:
+ * contratos_vigencia_status nunca soube filtrar por distrito).
  */
-async function mencionaFiltroNaoSuportado(supabase: SupabaseClient, pergunta: string): Promise<boolean> {
+type TipoFiltro = "distrito" | "contratada" | "contratante" | "statusVigencia" | "valor";
+
+interface FiltrosMencionados {
+  distrito: string | null;
+  contratada: string | null;
+  contratante: string | null;
+  /** "vencida" (vigência já vencida) ou "vigente" (contrato em vigor) — não
+   * confundir com contratos_vencendo, que é sobre vencer no futuro próximo. */
+  statusVigencia: "vencida" | "vigente" | null;
+  /** true só para a frase "valor total" — não para a palavra "valor" isolada,
+   * que também aparece como o nome de um tipo_aditivo (ver TIPOS_ADITIVO) e
+   * faria "quantos aditivos são do tipo Valor?" ceder por engano. */
+  valor: boolean;
+}
+
+async function detectarFiltrosMencionados(supabase: SupabaseClient, pergunta: string): Promise<FiltrosMencionados> {
   const { distritos, contratadas, contratantes } = await carregarValoresConhecidos(supabase);
-  return (
-    encontrarMencionado(pergunta, distritos) !== null ||
-    encontrarMencionado(pergunta, contratadas) !== null ||
-    encontrarMencionado(pergunta, contratantes) !== null
-  );
+  const p = normalizar(pergunta);
+
+  let statusVigencia: "vencida" | "vigente" | null = null;
+  if (/\bvencidas?\b/.test(p)) statusVigencia = "vencida";
+  else if (/\bvigentes?\b/.test(p)) statusVigencia = "vigente";
+
+  return {
+    distrito: encontrarMencionado(pergunta, distritos),
+    contratada: encontrarMencionado(pergunta, contratadas),
+    contratante: encontrarMencionado(pergunta, contratantes),
+    statusVigencia,
+    valor: /valor\s+total/.test(p),
+  };
+}
+
+/** Lista só os tipos de filtro que a pergunta de fato menciona (ignora os
+ * campos vazios/nulos). Comparada contra intencao.filtrosSuportados em
+ * tentarIntencao(). */
+function tiposMencionados(filtros: FiltrosMencionados): TipoFiltro[] {
+  const tipos: TipoFiltro[] = [];
+  if (filtros.distrito) tipos.push("distrito");
+  if (filtros.contratada) tipos.push("contratada");
+  if (filtros.contratante) tipos.push("contratante");
+  if (filtros.statusVigencia) tipos.push("statusVigencia");
+  if (filtros.valor) tipos.push("valor");
+  return tipos;
 }
 
 type Periodo = { inicio: string; fim: string; label: string };
@@ -221,6 +261,13 @@ interface ContextoIntencao {
 interface Intencao {
   id: string;
   padroes: RegExp[];
+  /** Quais qualificadores (ver TipoFiltro) esta intenção sabe de fato
+   * aplicar no SQL que executa. tentarIntencao() cede automaticamente (nem
+   * chama `executar`) se a pergunta mencionar um qualificador fora desta
+   * lista, em vez de responder um recorte mais amplo que o pedido como se
+   * fosse a resposta certa. Lista vazia = intenção "geral", sem nenhum
+   * recorte aplicável — qualquer qualificador mencionado a faz ceder. */
+  filtrosSuportados: TipoFiltro[];
   // Pode devolver null quando o padrão bateu mas os dados necessários (ex: nome
   // de empresa) não foram encontrados — nesse caso, tentarIntencao() segue
   // tentando outras intenções, e por fim cai no fallback do Gemini, em vez de
@@ -229,7 +276,7 @@ interface Intencao {
 }
 
 // ---------------------------------------------------------------------------
-// As 19 intenções confirmadas
+// As intenções confirmadas
 // ---------------------------------------------------------------------------
 
 const intencoes: Intencao[] = [
@@ -237,6 +284,7 @@ const intencoes: Intencao[] = [
   {
     id: "contratos_paralisados",
     padroes: [/contratos?\b.*paralisad/i, /obras?.*paralisad/i],
+    filtrosSuportados: ["distrito"],
     executar: async ({ supabase, pergunta }) => {
       const { distritos } = await carregarValoresConhecidos(supabase);
       const distrito = encontrarMencionado(pergunta, distritos);
@@ -294,6 +342,7 @@ const intencoes: Intencao[] = [
     // contratos_vigencia_status (posição 33) — os dois números às vezes
     // coincidem por acaso, mascarando o bug no eval.
     padroes: [/contratos?\b.*venc(?!id)/i],
+    filtrosSuportados: [],
     executar: async ({ supabase }) => {
       const periodo = calcularPeriodo("proximo_mes");
       const { data, count } = await supabase
@@ -317,6 +366,7 @@ const intencoes: Intencao[] = [
   {
     id: "obras_prazo_execucao_encerrando",
     padroes: [/prazo.*execu[cç][aã]o.*(encerra|termina|acaba)/i, /obras?.*prazo.*pr[oó]ximo m[eê]s/i],
+    filtrosSuportados: [],
     executar: async ({ supabase }) => {
       const periodo = calcularPeriodo("proximo_mes");
       const { data, count } = await supabase
@@ -340,6 +390,7 @@ const intencoes: Intencao[] = [
   {
     id: "obras_por_contratada",
     padroes: [/(obras?|contratos?\b).*(empresa|construtora|contratada|secretaria|contratante)/i],
+    filtrosSuportados: ["contratada", "contratante"],
     executar: async ({ supabase, pergunta }) => {
       const { contratadas, contratantes } = await carregarValoresConhecidos(supabase);
       const empresa = encontrarMencionado(pergunta, contratadas);
@@ -372,6 +423,7 @@ const intencoes: Intencao[] = [
   {
     id: "contratos_aguardando_os",
     padroes: [/aguardando\s+os\b/i, /contratos?\b.*aguard.*\bos\b/i],
+    filtrosSuportados: [],
     executar: async ({ supabase }) => {
       const { data, count } = await supabase
         .from("contratos_edificacao")
@@ -396,6 +448,7 @@ const intencoes: Intencao[] = [
     // sequestrando essa pergunta de contratos_por_contratante (que trata o
     // distrito certo) — sempre um número maior/errado, sem aviso.
     padroes: [/contratos?\b.*distrito/i, /quantos?\s+contratos?\b.*em\s+[A-ZÀ-Ú]/],
+    filtrosSuportados: ["distrito"],
     executar: async ({ supabase, pergunta }) => {
       const { distritos } = await carregarValoresConhecidos(supabase);
       const distrito = encontrarMencionado(pergunta, distritos);
@@ -420,24 +473,22 @@ const intencoes: Intencao[] = [
   {
     id: "contratos_por_contratante",
     padroes: [
-      /quantos?\s+contratos?.*(seduc|sesa|secretaria|contratante)/i,
-      /contratos?.*(da|de)\s+(secretaria|contratante)/i,
+      // achado do rev-aderencia/rev-produto (F5, rodada 2): sem \b,
+      // "contratos" casava como PREFIXO de "contratou" — mesma classe de bug
+      // já corrigida nas outras ~8 ocorrências do arquivo; faltavam estas 2.
+      /quantos?\s+contratos?\b.*(seduc|sesa|secretaria|contratante)/i,
+      /contratos?\b.*(da|de)\s+(secretaria|contratante)/i,
       // F5: "quantas obras a SOP contratou?" — mesma pergunta, sem a palavra
       // "contrato(s)". contratante ainda vem de carregarValoresConhecidos.
       /quantas?\s+obras?.*contratou/i,
     ],
+    filtrosSuportados: ["contratante"],
     executar: async ({ supabase, pergunta }) => {
-      const { contratantes, distritos } = await carregarValoresConhecidos(supabase);
+      const { contratantes } = await carregarValoresConhecidos(supabase);
       const contratante = encontrarMencionado(pergunta, contratantes);
       if (!contratante) {
         return null;
       }
-      // F5 (achado do rev-correcao/rev-produto): esta intenção só sabe
-      // filtrar por contratante. Se a pergunta TAMBÉM cita um distrito
-      // conhecido ("...contratou no distrito de Crato?"), responder o total
-      // do contratante inteiro seria ignorar o recorte pedido silenciosamente
-      // — cede para o caminho LLM em vez disso.
-      if (encontrarMencionado(pergunta, distritos)) return null;
       const { count } = await supabase
         .from("contratos_edificacao")
         .select("*", { count: "exact", head: true })
@@ -456,6 +507,7 @@ const intencoes: Intencao[] = [
   {
     id: "fiscais_por_distrito",
     padroes: [/quantos?\s+fisca(l|is)/i],
+    filtrosSuportados: ["distrito"],
     executar: async ({ supabase, pergunta }) => {
       const { distritos } = await carregarValoresConhecidos(supabase);
       const distrito = encontrarMencionado(pergunta, distritos);
@@ -483,6 +535,7 @@ const intencoes: Intencao[] = [
   {
     id: "processos_em_tramitacao",
     padroes: [/processos?.*(tramita|andamento)/i, /processos?\s+de\s+replanilhamento/i],
+    filtrosSuportados: ["contratada"],
     executar: async ({ supabase, pergunta }) => {
       const { contratadas } = await carregarValoresConhecidos(supabase);
       const empresa = encontrarMencionado(pergunta, contratadas);
@@ -508,6 +561,7 @@ const intencoes: Intencao[] = [
   {
     id: "processos_por_empresa",
     padroes: [/processos?.*(empresa|construtora|contratada)/i],
+    filtrosSuportados: ["contratada"],
     executar: async ({ supabase, pergunta }) => {
       const { contratadas } = await carregarValoresConhecidos(supabase);
       const empresa = encontrarMencionado(pergunta, contratadas);
@@ -532,6 +586,7 @@ const intencoes: Intencao[] = [
   {
     id: "valor_aditivos_aprovados",
     padroes: [/valor.*total.*aditivos?.*aprovad/i, /quanto.*aditivos?.*aprovad/i],
+    filtrosSuportados: ["valor"],
     executar: async ({ supabase, pergunta }) => {
       const periodo = detectarPeriodo(pergunta) ?? calcularPeriodo("este_mes");
       const { data } = await supabase
@@ -575,6 +630,7 @@ const intencoes: Intencao[] = [
   {
     id: "contrato_mais_aditivos",
     padroes: [/contrato.*mais\s+aditivos/i, /maior\s+n[uú]mero\s+de\s+aditivos/i],
+    filtrosSuportados: [],
     executar: async ({ supabase }) => {
       const { data } = await supabase.from("aditivos_contrato").select("id_contrato");
       const contagem: Record<number, number> = {};
@@ -602,6 +658,7 @@ const intencoes: Intencao[] = [
   {
     id: "aditivos_com_supressao",
     padroes: [/aditivos?.*supress/i],
+    filtrosSuportados: [],
     executar: async ({ supabase }) => {
       const { count } = await supabase
         .from("aditivos_contrato")
@@ -620,6 +677,7 @@ const intencoes: Intencao[] = [
   {
     id: "tempo_medio_protocolo_assinatura",
     padroes: [/tempo\s+m[eé]dio.*protocolo.*assinatura/i],
+    filtrosSuportados: [],
     executar: async ({ supabase }) => {
       const { data } = await supabase
         .from("aditivos_contrato")
@@ -645,6 +703,7 @@ const intencoes: Intencao[] = [
   {
     id: "aditivo_maior_repercussao",
     padroes: [/aditivo.*maior.*repercuss/i],
+    filtrosSuportados: ["valor"],
     executar: async ({ supabase }) => {
       const { data } = await supabase
         .from("aditivos_contrato")
@@ -673,6 +732,7 @@ const intencoes: Intencao[] = [
   {
     id: "aditivos_publicados_periodo",
     padroes: [/aditivos?.*publicad/i],
+    filtrosSuportados: [],
     executar: async ({ supabase, pergunta }) => {
       const periodo = detectarPeriodo(pergunta) ?? calcularPeriodo("este_mes");
       const { count } = await supabase
@@ -693,6 +753,7 @@ const intencoes: Intencao[] = [
   {
     id: "contratos_percentual_aditivo_alto",
     padroes: [/percentual.*aditivo.*(acima|maior)/i, /contratos?\b.*25\s*%/],
+    filtrosSuportados: [],
     executar: async ({ supabase }) => {
       const { data, count } = await supabase
         .from("ficha_contrato")
@@ -715,6 +776,7 @@ const intencoes: Intencao[] = [
   {
     id: "contratos_menor_saldo",
     padroes: [/menor\s+saldo/i, /saldo.*contrato.*(baixo|menor)/i],
+    filtrosSuportados: ["valor"],
     executar: async ({ supabase }) => {
       const { data } = await supabase
         .from("ficha_contrato")
@@ -737,6 +799,7 @@ const intencoes: Intencao[] = [
   {
     id: "gestor_mais_contratos",
     padroes: [/gestor.*mais\s+contratos/i, /qual\s+gestor.*mais/i],
+    filtrosSuportados: [],
     executar: async ({ supabase }) => {
       const { data } = await supabase.from("ficha_contrato").select("gestor_nome");
       const contagem: Record<string, number> = {};
@@ -758,6 +821,7 @@ const intencoes: Intencao[] = [
   {
     id: "contrato_maior_percentual_medido",
     padroes: [/maior\s+percentual.*medid/i, /contrato.*mais\s+medido/i],
+    filtrosSuportados: [],
     executar: async ({ supabase }) => {
       const { data } = await supabase
         .from("ficha_contrato")
@@ -788,10 +852,14 @@ const intencoes: Intencao[] = [
   // 26. Quantas obras estão em execução? (aceita filtro de distrito, mesma
   // lógica de contratos_paralisados — achado do rev-produto: sem isso, uma
   // pergunta "...em execução no distrito de Crato?" batia no regex e
-  // devolvia o total NACIONAL como se fosse o recorte, silenciosamente)
+  // devolvia o total NACIONAL como se fosse o recorte, silenciosamente.
+  // filtrosSuportados não inclui contratada/contratante — achado do
+  // rev-seguranca, rodada 2: "quantas obras a Forteks tem em execução?"
+  // ainda respondia o total nacional; a checagem central agora cede.)
   {
     id: "total_obras_execucao",
     padroes: [/obras?.*em\s+execu[cç][aã]o/i],
+    filtrosSuportados: ["distrito"],
     executar: async ({ supabase, pergunta }) => {
       const { distritos } = await carregarValoresConhecidos(supabase);
       const distrito = encontrarMencionado(pergunta, distritos);
@@ -814,15 +882,11 @@ const intencoes: Intencao[] = [
   },
 
   // 27. Quantos processos existem no total? (distinto de "em tramitação").
-  // Guarda contra recorte ignorado (achado do rev-produto): se a pergunta
-  // menciona um distrito/contratada/contratante conhecido que esta intenção
-  // não sabe filtrar, devolve null em vez de responder o total nacional como
-  // se fosse o recorte — cai para o caminho LLM, que tenta o filtro de verdade.
   {
     id: "total_processos_geral",
     padroes: [/quantos?\s+processos?\s+(existem|h[aá])\b/i, /processos?.*(no total|ao todo)\b/i],
-    executar: async ({ supabase, pergunta }) => {
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
+    filtrosSuportados: [],
+    executar: async ({ supabase }) => {
       const { count } = await supabase.from("processos").select("*", { count: "exact", head: true });
       return {
         origem: "intencao",
@@ -837,8 +901,8 @@ const intencoes: Intencao[] = [
   {
     id: "total_aditivos_geral",
     padroes: [/quantos?\s+aditivos?\s+(existem|h[aá])\b/i, /aditivos?.*(no total|ao todo)\b/i],
-    executar: async ({ supabase, pergunta }) => {
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
+    filtrosSuportados: [],
+    executar: async ({ supabase }) => {
       const { count } = await supabase.from("aditivos_contrato").select("*", { count: "exact", head: true });
       return {
         origem: "intencao",
@@ -854,8 +918,8 @@ const intencoes: Intencao[] = [
   {
     id: "tipos_aditivo_resumo",
     padroes: [/(tipos?\s+de\s+aditivo|aditivos?.*tipo).*(quantos?\s+de\s+cada|e\s+quantos)/i],
-    executar: async ({ supabase, pergunta }) => {
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
+    filtrosSuportados: [],
+    executar: async ({ supabase }) => {
       const { data } = await supabase.from("aditivos_contrato").select("tipo_aditivo");
       const contagem: Record<string, number> = {};
       for (const r of data ?? []) contagem[r.tipo_aditivo] = (contagem[r.tipo_aditivo] ?? 0) + 1;
@@ -877,10 +941,10 @@ const intencoes: Intencao[] = [
   {
     id: "aditivos_por_tipo",
     padroes: [/aditivos?\s+(s[aã]o\s+)?do\s+tipo\s+/i, /tipo\s+de\s+aditivo\s+/i],
+    filtrosSuportados: [],
     executar: async ({ supabase, pergunta }) => {
       const tipo = encontrarTipoAditivo(pergunta);
       if (!tipo) return null; // não reconheceu o tipo — deixa o Gemini tentar
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
       const { count } = await supabase
         .from("aditivos_contrato")
         .select("*", { count: "exact", head: true })
@@ -898,8 +962,8 @@ const intencoes: Intencao[] = [
   {
     id: "municipio_mais_contratos",
     padroes: [/munic[ií]pio.*mais\s+contratos/i],
-    executar: async ({ supabase, pergunta }) => {
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
+    filtrosSuportados: [],
+    executar: async ({ supabase }) => {
       const { data } = await supabase.from("contratos_edificacao").select("municipio").not("municipio", "is", null);
       const contagem: Record<string, number> = {};
       for (const r of data ?? []) contagem[r.municipio] = (contagem[r.municipio] ?? 0) + 1;
@@ -918,8 +982,8 @@ const intencoes: Intencao[] = [
   {
     id: "obras_sem_fiscal",
     padroes: [/obras?.*sem\s+fiscal/i, /quantas?\s+obras?.*n[aã]o\s+t[eê]m?\s+fiscal/i],
-    executar: async ({ supabase, pergunta }) => {
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
+    filtrosSuportados: [],
+    executar: async ({ supabase }) => {
       const { data: comFiscal } = await supabase
         .from("comissao_fiscalizacao")
         .select("id_obra")
@@ -943,8 +1007,8 @@ const intencoes: Intencao[] = [
   {
     id: "contratos_vigencia_status",
     padroes: [/quantos?\s+contratos?\s+(est[aã]o\s+)?vigent(es)?\b/i, /quantos?\s+contratos?\b.*vig[eê]ncia\s+vencida/i],
+    filtrosSuportados: ["statusVigencia"],
     executar: async ({ supabase, pergunta }) => {
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
       const vencidos = /vencid/i.test(pergunta);
       const status = vencidos ? "Vigência Vencida" : "Vigente";
       const { count } = await supabase
@@ -966,12 +1030,8 @@ const intencoes: Intencao[] = [
   {
     id: "total_distritos",
     padroes: [/quantos?\s+distritos?\s+(operacionais?\s+)?(diferentes\s+)?(existem|h[aá])/i],
-    executar: async ({ supabase, pergunta }) => {
-      // não usa mencionaFiltroNaoSuportado: a própria pergunta ("quantos
-      // distritos existem") não tem recorte para ignorar — mas se citar uma
-      // contratada/contratante específica, é uma pergunta diferente demais
-      // (nº de distritos onde ela atua) que esta intenção não responde.
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
+    filtrosSuportados: [],
+    executar: async ({ supabase }) => {
       const { distritos } = await carregarValoresConhecidos(supabase);
       return {
         origem: "intencao",
@@ -986,8 +1046,8 @@ const intencoes: Intencao[] = [
   {
     id: "total_contratadas",
     padroes: [/quantas?\s+empresas?\s+contratadas?\s+(diferentes\s+)?(existem|h[aá])/i],
-    executar: async ({ supabase, pergunta }) => {
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
+    filtrosSuportados: [],
+    executar: async ({ supabase }) => {
       const { contratadas } = await carregarValoresConhecidos(supabase);
       return {
         origem: "intencao",
@@ -1002,8 +1062,8 @@ const intencoes: Intencao[] = [
   {
     id: "total_fichas_contrato",
     padroes: [/quantas?\s+fichas?\s+(de\s+contrato\s+)?(existem|h[aá])/i],
-    executar: async ({ supabase, pergunta }) => {
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
+    filtrosSuportados: [],
+    executar: async ({ supabase }) => {
       const { count } = await supabase.from("ficha_contrato").select("*", { count: "exact", head: true });
       return {
         origem: "intencao",
@@ -1018,8 +1078,8 @@ const intencoes: Intencao[] = [
   {
     id: "total_medicoes",
     padroes: [/quantas?\s+medi[cç][oõ]es?\s+(foram\s+registradas|existem|h[aá])/i],
-    executar: async ({ supabase, pergunta }) => {
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
+    filtrosSuportados: [],
+    executar: async ({ supabase }) => {
       const { count } = await supabase.from("medicoes").select("*", { count: "exact", head: true });
       return {
         origem: "intencao",
@@ -1034,8 +1094,8 @@ const intencoes: Intencao[] = [
   {
     id: "valor_total_contratos",
     padroes: [/valor\s+total\s+d(os|e)\s+contratos?\b/i],
-    executar: async ({ supabase, pergunta }) => {
-      if (await mencionaFiltroNaoSuportado(supabase, pergunta)) return null;
+    filtrosSuportados: ["valor"],
+    executar: async ({ supabase }) => {
       const { data } = await supabase.from("contratos_edificacao").select("valor_atual");
       const total = (data ?? []).reduce((acc: number, r: any) => acc + Number(r.valor_atual ?? 0), 0);
       return {
@@ -1050,13 +1110,14 @@ const intencoes: Intencao[] = [
   // 39. Qual distrito tem mais contratos?
   {
     id: "distrito_mais_contratos",
+    // citar um distrito aqui é normal (é a própria pergunta), por isso
+    // "distrito" não entra em filtrosSuportados como recorte — mas citar uma
+    // contratada/contratante específica é uma pergunta diferente ("em quantos
+    // distritos a empresa X atua") que esta intenção não responde, e a
+    // checagem central cede nesse caso.
     padroes: [/qual\s+distrito.*mais\s+contratos/i, /distrito.*maior\s+n[uú]mero\s+de\s+contratos/i],
-    executar: async ({ supabase, pergunta }) => {
-      // só o nome de contratada/contratante seria um recorte ignorado —
-      // citar um distrito aqui é normal (é a própria pergunta) e não deve
-      // bloquear, por isso não usa mencionaFiltroNaoSuportado inteiro.
-      const { contratadas, contratantes } = await carregarValoresConhecidos(supabase);
-      if (encontrarMencionado(pergunta, contratadas) || encontrarMencionado(pergunta, contratantes)) return null;
+    filtrosSuportados: [],
+    executar: async ({ supabase }) => {
       const { data } = await supabase.from("contratos_edificacao").select("distrito_operacional").not("distrito_operacional", "is", null);
       const contagem: Record<string, number> = {};
       for (const r of data ?? []) contagem[r.distrito_operacional] = (contagem[r.distrito_operacional] ?? 0) + 1;
@@ -1078,13 +1139,23 @@ export async function tentarIntencao(
   supabase: SupabaseClient,
   pergunta: string
 ): Promise<ResultadoIntencao | null> {
+  const filtros = await detectarFiltrosMencionados(supabase, pergunta);
+  const mencionados = tiposMencionados(filtros);
+
   for (const intencao of intencoes) {
-    if (intencao.padroes.some((regex) => regex.test(pergunta))) {
-      const resultado = await intencao.executar({ supabase, pergunta });
-      if (resultado !== null) return resultado;
-      // resultado null: essa intenção "quase" bateu mas faltou dado essencial
-      // (ex: nome de empresa não encontrado) — continua tentando outras.
-    }
+    if (!intencao.padroes.some((regex) => regex.test(pergunta))) continue;
+
+    // Checagem central (F5 rodada 3): se a pergunta menciona um qualificador
+    // que esta intenção não declarou saber aplicar, nem chama executar() —
+    // segue tentando outras intenções (uma mais específica pode dar conta) e,
+    // por fim, cai no caminho LLM, que tenta o filtro de verdade.
+    const filtroNaoSuportado = mencionados.some((tipo) => !intencao.filtrosSuportados.includes(tipo));
+    if (filtroNaoSuportado) continue;
+
+    const resultado = await intencao.executar({ supabase, pergunta });
+    if (resultado !== null) return resultado;
+    // resultado null: essa intenção "quase" bateu mas faltou dado essencial
+    // (ex: nome de empresa não encontrado) — continua tentando outras.
   }
   return null;
 }

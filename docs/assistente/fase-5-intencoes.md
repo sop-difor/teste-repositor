@@ -126,6 +126,66 @@ batendo; e um script à parte testando as 8 perguntas exatas dos 3 achados (não
 número — o `intencaoId` que respondeu) — 8/8 corretas, incluindo o valor real de "obras em
 execução no distrito de Crato" = **23** (era 221 antes da correção).
 
+## Correção de causa raiz (rodada 3) — 4 de 4 auditores bloquearam de novo
+
+A correção pontual da rodada 2 resolveu os 2 casos relatados, mas cada um dos 4 revisores,
+de forma independente, achou **outra intenção com o mesmo tipo de bug** que a correção não
+cobriu — o padrão de "consertar um caso e achar outro na rodada seguinte" já tinha se
+repetido uma vez (rodada 1 → rodada 2) e se repetiu de novo (rodada 2 → rodada 3). Pelo
+processo combinado com o usuário (`revisores.md` §6: 2 rodadas de `BLOQUEADO` na mesma fase
+escalam para o usuário decidir), essa decisão subiu — o usuário escolheu **resolver a causa
+raiz** em vez de continuar corrigindo caso a caso.
+
+**Achados da rodada 3** (todos a mesma classe de bug: uma intenção aplica só PARTE dos
+qualificadores que a pergunta pede, e responde um recorte mais amplo/errado sem avisar):
+
+| Revisor | Achado |
+|---|---|
+| `rev-seguranca` | `total_obras_execucao` (corrigida na rodada 2 para distrito) ainda ignorava contratada/contratante — "quantas obras a Forteks tem em execução?" respondia o total nacional |
+| `rev-correcao` | `obras_por_contratada` ignorava distrito — "quantos contratos a SEDUC tem no distrito de Crato?" responderia 158 em vez de 23 (conferido com SQL real); `contratos_por_distrito` ignorava status de vigência — "vigência vencida no distrito de Crato" responderia 46 em vez de 9 |
+| `rev-produto` | `contratos_por_distrito` também sequestrava "valor total dos contratos no distrito de X" e respondia uma **contagem** em vez do valor em R$ — a correção da rodada 2 em `valor_total_contratos` nunca era alcançada nessa frase; `contratos_por_contratante` ainda tinha 2 padrões sem `\b` (a alegação da rodada 2 de "todo padrão ganhou `\b`" não era verdade) |
+| `rev-aderencia` | os mesmos 2 padrões sem `\b` em `contratos_por_contratante`, achados por leitura estática |
+
+### A correção: checagem central de filtros, não mais uma guarda por intenção
+
+Em vez de continuar corrigindo intenção por intenção, cada intenção agora **declara**
+(`filtrosSuportados: TipoFiltro[]`) quais qualificadores ela sabe de fato aplicar —
+`distrito`, `contratada`, `contratante`, `statusVigencia` (vencida/vigente) ou `valor`
+(pede R$, não contagem — restrito à frase "valor total" para não colidir com o tipo de
+aditivo "Valor"). Uma função central, `detectarFiltrosMencionados()`, roda uma vez por
+pergunta em `tentarIntencao()` e cede automaticamente (nem chama `executar()`) sempre que a
+pergunta menciona um qualificador fora da lista declarada da intenção que bateu o regex —
+tenta a próxima intenção do array, ou por fim cai no caminho LLM.
+
+Isso substitui as ~11 chamadas manuais espalhadas de `mencionaFiltroNaoSuportado()`
+(removida) por uma única checagem que **não depende de lembrar de instrumentar cada
+intenção nova** — inclusive fechou, de graça, casos que nenhum revisor tinha relatado ainda
+(ex.: `contratos_vigencia_status` nunca soube filtrar por distrito). Também corrigidos os 2
+padrões sem `\b` remanescentes em `contratos_por_contratante`.
+
+### Verificação
+
+Sem credenciais de produção nesta sessão para rodar `deno task eval` (precisa de
+`SUPABASE_SERVICE_ROLE_KEY`, mantida só em memória em sessões anteriores, não persistida).
+Em vez disso:
+- `deno check motor_intencoes.ts index.ts` — compila limpo.
+- Script contra um Supabase falso chamando a função **real** `tentarIntencao()` (não uma
+  reimplementação): os 5 casos que os 4 revisores relataram na rodada 3 agora cedem
+  (`null`) corretamente, e as 7 perguntas mais próximas de regredir (do gabarito da F3/F5)
+  continuam respondendo pela mesma `intencaoId` de antes.
+- Segundo script, mais amplo, rodando as 34 perguntas `intencao_exata`/`intencao_formato`
+  do gabarito completo (`casos.jsonl`) mais as `llm_nao_sei`/`ambigua` (que devem continuar
+  sem bater intenção nenhuma) contra a função real: **48/48 corretas**. Achado incidental,
+  não relacionado a esta correção: `llm-14`/`llm-17` (categoria `llm_dado` no gabarito) já
+  batem em `contratos_aguardando_os`/`contratos_percentual_aditivo_alto` mesmo antes da F5
+  — os padrões dessas duas intenções não exigem a palavra "contratos" — mesma situação
+  pré-existente já observada em `llm-11`. Não é regressão desta correção; registrado como
+  observação para o gabarito refletir a categoria certa, sem prioridade.
+- `deno task eval` completo com credenciais reais (números do banco) fica pendente de
+  quem tiver a `service_role` à mão — recomendado antes do sign-off final da fase, embora
+  a checagem central não altere nenhum valor numérico dentro dos `executar()`, só a decisão
+  de QUAL intenção (ou nenhuma) responde.
+
 ## Fora do escopo desta leva
 
 - Chegar aos 40–60 previstos no README — ficou em 34 (+70% sobre as 20 originais).
