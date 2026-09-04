@@ -169,9 +169,14 @@ interface FiltrosMencionados {
   /** "vencida" (vigência já vencida) ou "vigente" (contrato em vigor) — não
    * confundir com contratos_vencendo, que é sobre vencer no futuro próximo. */
   statusVigencia: "vencida" | "vigente" | null;
-  /** true só para a frase "valor total" — não para a palavra "valor" isolada,
-   * que também aparece como o nome de um tipo_aditivo (ver TIPOS_ADITIVO) e
-   * faria "quantos aditivos são do tipo Valor?" ceder por engano. */
+  /** true se a pergunta pede um valor em R$ (não uma contagem) — "valor
+   * total", "valor de/dos/da/das X" ou "quanto custam/vale(m)/foi gasto".
+   * Não dispara para a palavra "valor" isolada sem essas construções, porque
+   * "valor" também aparece como nome de um tipo_aditivo (TIPOS_ADITIVO) e em
+   * frases como "supressão de valor" — nenhuma das duas pede um total em R$.
+   * Achado do rev-produto (F5, rodada 3): restringir demais (só "valor
+   * total") deixava passar "quanto custam os contratos no distrito de
+   * Crato?"/"qual o valor dos contratos da SEDUC?" sem proteção nenhuma. */
   valor: boolean;
 }
 
@@ -180,7 +185,10 @@ async function detectarFiltrosMencionados(supabase: SupabaseClient, pergunta: st
   const p = normalizar(pergunta);
 
   let statusVigencia: "vencida" | "vigente" | null = null;
-  if (/\bvencidas?\b/.test(p)) statusVigencia = "vencida";
+  // achado do rev-seguranca (F5, rodada 3): só cobria a forma feminina
+  // ("vencida") — "quantos contratos estão VENCIDOS?" (concordando com
+  // "contratos", masculino) não era detectado.
+  if (/\bvencidos?\b|\bvencidas?\b/.test(p)) statusVigencia = "vencida";
   else if (/\bvigentes?\b/.test(p)) statusVigencia = "vigente";
 
   return {
@@ -188,7 +196,10 @@ async function detectarFiltrosMencionados(supabase: SupabaseClient, pergunta: st
     contratada: encontrarMencionado(pergunta, contratadas),
     contratante: encontrarMencionado(pergunta, contratantes),
     statusVigencia,
-    valor: /valor\s+total/.test(p),
+    valor:
+      /valor(es)?\s+tota(l|is)\b/.test(p) ||
+      /valor\s+d(e|os|as|o|a)\b/.test(p) ||
+      /\bquanto\b.*\b(custam?|vale[m]?|gasto)\b/.test(p),
   };
 }
 
@@ -393,8 +404,14 @@ const intencoes: Intencao[] = [
     filtrosSuportados: ["contratada", "contratante"],
     executar: async ({ supabase, pergunta }) => {
       const { contratadas, contratantes } = await carregarValoresConhecidos(supabase);
+      // achado do rev-seguranca/rev-correcao (F5, rodada 3): antes, achar uma
+      // contratada IMPEDIA de sequer procurar um contratante ("empresa ?
+      // null : ...") — se a pergunta citava os dois ("Forteks com a SEDUC"),
+      // o filtro de contratante era descartado em silêncio e a resposta
+      // saía sem o segundo recorte. Agora os dois são buscados de forma
+      // independente e aplicados juntos (AND) quando ambos aparecem.
       const empresa = encontrarMencionado(pergunta, contratadas);
-      const contratante = empresa ? null : encontrarMencionado(pergunta, contratantes);
+      const contratante = encontrarMencionado(pergunta, contratantes);
 
       if (!empresa && !contratante) {
         return null; // deixa outra intenção ou o Gemini tentarem
@@ -403,17 +420,18 @@ const intencoes: Intencao[] = [
       let query = supabase
         .from("contratos_edificacao")
         .select("descricao_obra, status_obra, municipio", { count: "exact" });
-      query = empresa ? query.eq("contratada", empresa) : query.eq("contratante", contratante!);
+      if (empresa) query = query.eq("contratada", empresa);
+      if (contratante) query = query.eq("contratante", contratante);
 
       const { data, count } = await query;
       const lista = (data ?? [])
         .map((r: any) => `• ${r.descricao_obra} — ${r.municipio} (${r.status_obra})`)
         .join("\n");
-      const nomeExibido = empresa ?? contratante;
+      const nomeExibido = [empresa, contratante].filter(Boolean).join(" / ");
       return {
         origem: "intencao",
         intencaoId: "obras_por_contratada",
-        resposta: `${empresa ? "A" : "O"} ${nomeExibido} tem ${count ?? 0} obra(s):\n${lista}`,
+        resposta: `${nomeExibido} tem ${count ?? 0} obra(s):\n${lista}`,
         linhas: count ?? 0,
       };
     },
@@ -1110,11 +1128,13 @@ const intencoes: Intencao[] = [
   // 39. Qual distrito tem mais contratos?
   {
     id: "distrito_mais_contratos",
-    // citar um distrito aqui é normal (é a própria pergunta), por isso
-    // "distrito" não entra em filtrosSuportados como recorte — mas citar uma
-    // contratada/contratante específica é uma pergunta diferente ("em quantos
-    // distritos a empresa X atua") que esta intenção não responde, e a
-    // checagem central cede nesse caso.
+    // filtrosSuportados vazio: qualquer qualificador conhecido mencionado
+    // (inclusive um distrito específico, não só contratada/contratante) faz
+    // a checagem central ceder — na prática isso raramente atrapalha, porque
+    // a pergunta típica ("qual distrito tem mais contratos?") não cita um
+    // distrito específico; citar uma contratada/contratante é o caso real
+    // que isto pretende cobrir ("em quantos distritos a empresa X atua" é
+    // uma pergunta diferente, que esta intenção não responde).
     padroes: [/qual\s+distrito.*mais\s+contratos/i, /distrito.*maior\s+n[uú]mero\s+de\s+contratos/i],
     filtrosSuportados: [],
     executar: async ({ supabase }) => {

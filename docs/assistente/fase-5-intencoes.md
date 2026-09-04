@@ -186,6 +186,29 @@ Em vez disso:
   a checagem central não altere nenhum valor numérico dentro dos `executar()`, só a decisão
   de QUAL intenção (ou nenhuma) responde.
 
+### Correção pós-revisão da rodada 3 — 3 de 4 auditores bloquearam
+
+A checagem central resolveu a classe de bug relatada, mas 3 dos 4 revisores acharam furos na
+própria mecânica nova (a checagem central só é tão boa quanto a declaração/detecção por trás
+dela):
+
+| Revisor | Achado |
+|---|---|
+| `rev-seguranca` + `rev-correcao` (independentes) | `obras_por_contratada` declarava suportar `contratada` **e** `contratante`, mas só aplicava um dos dois — achar uma contratada descartava a busca por contratante em silêncio ("Forteks com a SEDUC" respondia o total da Forteks, ignorando a SEDUC) |
+| `rev-seguranca` + `rev-correcao` (independentes) | `statusVigencia` só reconhecia a forma feminina "vencida" — "contratos **vencidos**" (concordando com "contratos", a forma mais natural) não era detectado, reabrindo o achado original de vigência ignorada |
+| `rev-produto` | `valor` só disparava na frase exata "valor total" — "quanto **custam**...", "qual o **valor dos** contratos...", "quanto **vale**..." escapavam da proteção |
+| `rev-correcao` (follow-up) | "valores totais" (plural) também não disparava `valor` |
+
+Corrigido: `obras_por_contratada` agora busca contratada e contratante de forma independente
+e aplica os dois como filtro (AND) quando ambos aparecem, em vez de descartar o segundo;
+`statusVigencia` passou a reconhecer "vencido(s)" além de "vencida(s)"; `valor` passou a
+cobrir "valor de/dos/da/das X", "quanto custam/vale(m)/foi gasto" e o plural "valores
+totais", mantendo o cuidado de não colidir com o tipo de aditivo "Valor" (script de teste
+próprio confirma "quantos aditivos são do tipo Valor?" continua respondendo direto).
+
+Reverificado: `deno check` limpo; os dois scripts de teste (o dos 5+4 casos-alvo e o de
+48 perguntas do gabarito completo) rodados de novo — 16/16 e 48/48.
+
 ## Fora do escopo desta leva
 
 - Chegar aos 40–60 previstos no README — ficou em 34 (+70% sobre as 20 originais).
