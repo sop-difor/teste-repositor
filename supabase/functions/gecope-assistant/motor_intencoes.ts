@@ -174,11 +174,43 @@ interface FiltrosMencionados {
    * Não dispara para a palavra "valor" isolada sem essas construções, porque
    * "valor" também aparece como nome de um tipo_aditivo (TIPOS_ADITIVO) e em
    * frases como "supressão de valor" — nenhuma das duas pede um total em R$.
-   * Achado do rev-produto (F5, rodada 3): restringir demais (só "valor
-   * total") deixava passar "quanto custam os contratos no distrito de
-   * Crato?"/"qual o valor dos contratos da SEDUC?" sem proteção nenhuma. */
+   * Achado do rev-produto, repetido em 3 rodadas seguidas (F5, rodadas 3 e
+   * 4): tentar reconhecer frases exatas ("valor total", "valor dos X",
+   * "quanto custam") sempre deixava passar mais uma variação natural
+   * ("quanto foi investido", "valor investido" — que nem exigia mudar de
+   * verbo, só a preposição não bater com a lista). Trocado por: a palavra
+   * "valor(es)" sozinha (com uma exceção só para as 2 colisões reais
+   * conhecidas) + uma lista de verbos do campo semântico de "pedir dinheiro"
+   * (custar, gastar, investir, valer, preço) — não depende mais de acertar
+   * a preposição ou a ordem das palavras. */
   valor: boolean;
 }
+
+/** "valor"/"preço" nestes contextos NÃO pedem um total em R$: como nome de
+ * um tipo_aditivo — "Valor" e "Reajuste de Preço" são 2 dos 8 valores fixos
+ * de TIPOS_ADITIVO ("...do tipo Valor", "aditivos do tipo Reajuste de
+ * Preço") — ou na frase "supressão de valor" (aditivos_com_supressao).
+ * A checagem de tipo_aditivo exige a palavra "tipo" também presente (não só
+ * "valor"/"preço" sozinhos) para não suprimir a detecção de valor em
+ * perguntas legítimas de dinheiro que não têm nada a ver com tipo_aditivo
+ * (ex.: "qual o valor total dos contratos?" não deve cair aqui). */
+function mencionaValorComoTermoDeDominio(p: string): boolean {
+  if (/supress[aã]o\s+de\s+valor/.test(p)) return true;
+  return /\btipos?\b/.test(p) && /\b(valor|precos?)\b/.test(p);
+}
+
+/** Verbos/substantivos do campo semântico de "pedir um total em R$" além da
+ * própria palavra "valor" — "cust*" (custa/custam/custou/custaram/custo),
+ * "gast*" (gasto/gastos/gastou/gastaram), "investid*"/"investiment*"/
+ * "investiu"/"investiram"/"investir" (não "investig*" — investigar não tem
+ * nada a ver com dinheiro), "preç*", e as formas de "valer". */
+// testado contra o texto já normalizado (normalizar() remove acento E
+// cedilha — "preço" vira "preco"), por isso "precos?" sem cedilha aqui. De
+// propósito não aceita "prec" seguido de qualquer coisa (\w*), que pegaria
+// "preciso"/"precisar"/"precisão" (nada a ver com dinheiro) — só o "o(s)"
+// final de "preço(s)".
+const PALAVRAS_PEDIDO_DE_VALOR =
+  /\b(cust\w*|gast\w*|investid\w*|investiment\w*|investiu|investiram|investir|precos?|vale|valem|valeu|valeram)\b/;
 
 async function detectarFiltrosMencionados(supabase: SupabaseClient, pergunta: string): Promise<FiltrosMencionados> {
   const { distritos, contratadas, contratantes } = await carregarValoresConhecidos(supabase);
@@ -191,15 +223,16 @@ async function detectarFiltrosMencionados(supabase: SupabaseClient, pergunta: st
   if (/\bvencidos?\b|\bvencidas?\b/.test(p)) statusVigencia = "vencida";
   else if (/\bvigentes?\b/.test(p)) statusVigencia = "vigente";
 
+  const pedeValorMonetario =
+    !mencionaValorComoTermoDeDominio(p) &&
+    (/\bvalor(es)?\b/.test(p) || PALAVRAS_PEDIDO_DE_VALOR.test(p));
+
   return {
     distrito: encontrarMencionado(pergunta, distritos),
     contratada: encontrarMencionado(pergunta, contratadas),
     contratante: encontrarMencionado(pergunta, contratantes),
     statusVigencia,
-    valor:
-      /valor(es)?\s+tota(l|is)\b/.test(p) ||
-      /valor\s+d(e|os|as|o|a)\b/.test(p) ||
-      /\bquanto\b.*\b(custam?|vale[m]?|gasto)\b/.test(p),
+    valor: pedeValorMonetario,
   };
 }
 

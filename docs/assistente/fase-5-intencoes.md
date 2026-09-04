@@ -209,6 +209,37 @@ próprio confirma "quantos aditivos são do tipo Valor?" continua respondendo di
 Reverificado: `deno check` limpo; os dois scripts de teste (o dos 5+4 casos-alvo e o de
 48 perguntas do gabarito completo) rodados de novo — 16/16 e 48/48.
 
+### Correção pós-revisão da rodada 4 — detector de "valor" trocado por palavra + verbos
+
+`rev-produto` bloqueou de novo (a 3ª vez seguida no mesmo ponto): a lista de frases exatas
+para `valor` ("valor total", "valor de/dos/da/das X", "quanto custam/vale(m)/gasto") ainda
+deixava passar "quanto foi **investido**..." — e nem "**valor** investido..." batia, porque
+exigia uma preposição específica logo depois de "valor" que "investido" não é.
+
+Trocado o método: em vez de continuar enumerando frases exatas (que sempre deixava faltar
+mais uma variação), agora a checagem é **a palavra "valor(es)" sozinha, mais uma lista de
+verbos do campo semântico de "pedir dinheiro"** (custar, gastar, investir, valer, preço) —
+não depende mais de acertar a preposição ou a ordem das palavras. A exceção continua sendo
+só para os 2 contextos reais de colisão: "valor"/"preço" como nome de um `tipo_aditivo`
+("...do tipo Valor", "...tipo Reajuste de Preço" — 2 dos 8 valores fixos de
+`TIPOS_ADITIVO`), detectada por exigir a palavra "tipo" também presente (não só
+"valor"/"preço" isolados); e a frase fixa "supressão de valor".
+
+Dois bugs próprios pegos e corrigidos durante esta correção, antes de submeter para revisão
+(script de teste ampliado apontou os dois):
+- Meu primeiro regex para o plural ("totais") estava errado — "totais" não é "total" + "s",
+  é uma forma irregular; a regra `total(is)?` fazia o SINGULAR parar de bater. Corrigido para
+  `tota(l|is)`.
+- `normalizar()` (função já existente no arquivo) remove acento **e cedilha** — "preço" vira
+  "preco". Meu primeiro regex tinha um "ç" literal, que nunca bateria contra o texto já
+  normalizado. Corrigido para comparar contra "preco" (sem cedilha), com cuidado extra para
+  não confundir com "preciso"/"precisar" (que também começam com "prec" depois de perder o
+  acento, mas não têm nada a ver com dinheiro).
+
+Reverificado: `deno check` limpo; os dois scripts de teste — agora com 20 casos-alvo
+(incluindo "investido", "preço" e o caso adversarial "preciso") e as 48 perguntas do
+gabarito completo — **20/20 e 48/48**.
+
 ## Fora do escopo desta leva
 
 - Chegar aos 40–60 previstos no README — ficou em 34 (+70% sobre as 20 originais).
