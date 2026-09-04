@@ -51,9 +51,10 @@ devolverem `APROVADO`. `BLOQUEADO` volta para correção na mesma fase. Duas rod
 |---|---|
 | F0 | **concluída** — 4/4 revisores `APROVADO` ([`fase-0-revisao.md`](fase-0-revisao.md)) |
 | F1 | **concluída** — 4/4 `APROVADO`, `.sql` aplicado em produção 03/09/2026 ([`fase-1-revisao.md`](fase-1-revisao.md)). Pendências não-bloqueantes: deploy da Edge Function, chamado Supabase (`REVOKE … FROM PUBLIC` no `net`) |
-| F2 | **pronta** — 4/4 `APROVADO` ([`fase-2-revisao.md`](fase-2-revisao.md)). Aguarda usuário aplicar `f2_nucleo.sql` + **um** deploy da Edge Function (cobre F1+F2) |
-| F3 | próxima — harness de avaliação (40–60 perguntas + gabarito + metas) |
-| F4–F8 | não iniciadas |
+| F2 | **concluída** — 4/4 `APROVADO`, `f2_nucleo.sql` aplicado em produção 03/09/2026 ([`fase-2-revisao.md`](fase-2-revisao.md)) |
+| F3 | **concluída** — 4/4 `APROVADO` ([`fase-3-revisao.md`](fase-3-revisao.md)). Portão determinístico verde (`intencao_exata` 100%, `seguranca` 100%). Achou e corrigiu 1 bug em produção (`motor_intencoes.ts`). Pendente (não bloqueia F4): rodar `--llm` com chave Gemini utilizável (FU-77) e então **um** deploy da Edge Function (cobre F1+F2+F3) |
+| F4 | próxima — views largas para Q&A |
+| F5–F8 | não iniciadas |
 
 ## Diagnóstico que motivou a iniciativa (03/09/2026)
 
@@ -95,6 +96,11 @@ falhas: 3× HTTP 404, 4× HTTP 503, 6× erro `42601` da família `limit`, 1× `[
 | `supabase/functions/gecope-assistant/index.ts` | Edge Function — orquestra intenções + LLM + log |
 | `supabase/functions/gecope-assistant/motor_intencoes.ts` | Motor de intenções (regras) |
 | `supabase/functions/gecope-assistant/schema_prompt.ts` | Dicionário condensado de schema, injetado no prompt do LLM |
+| `supabase/functions/gecope-assistant/guards.ts` | Validação/saneamento do SQL do modelo (testável isoladamente, F2) |
+| `supabase/functions/gecope-assistant/llm.ts` | Chamada ao Gemini com cadeia de fallback de modelo (extraído de `index.ts` na F3) |
+| `supabase/functions/gecope-assistant/eval_run.ts` | Runner do harness de avaliação (F3) — `deno task eval` / `eval:llm` |
+| `supabase/functions/deno.json` | Import map + tasks Deno, compartilhado entre as Edge Functions do projeto |
+| `docs/assistente/eval/casos.jsonl` | 55 casos de teste (pergunta + resposta esperada) do harness da F3 |
 | `docs/assistente/schema_dicionario.md` | Dicionário completo de schema (documentação legível) |
 | `docs/assistente/*` | Planos, escopo, config de revisores, vereditos por fase |
 

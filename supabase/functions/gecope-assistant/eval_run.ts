@@ -60,7 +60,17 @@ const supabase = createClient(Deno.env.get("SUPABASE_URL")!, CHAVE);
 
 // contém um número como TOKEN (não como pedaço de um número maior)
 function contemNumero(texto: string, n: number): boolean {
-  const semMilhar = texto.replace(/(\d)[.\s](\d{3}\b)/g, "$1$2");
+  // remove separador de milhar grupo a grupo, da direita para a esquerda: com /g,
+  // "4.103.725" perdia só o 1º separador (o "3" que sobrava do 1º grupo não fica
+  // mais adjacente a um dígito à esquerda no restante do scan) e virava "4103.725",
+  // não batendo com 4103725. Repetir a substituição (não-global) até estabilizar
+  // colapsa quantos grupos houver.
+  let semMilhar = texto;
+  let anterior: string;
+  do {
+    anterior = semMilhar;
+    semMilhar = semMilhar.replace(/(\d)[.\s](\d{3}\b)/, "$1$2");
+  } while (semMilhar !== anterior);
   return new RegExp(`(^|[^\\d.,])${n}([^\\d.,]|$)`).test(` ${semMilhar} `);
 }
 

@@ -46,7 +46,9 @@ descrição), `recusa`, `esclarecimento`, `bloqueado`, `recusa_ou_bloqueado`.
 
 ### 2. Runner — `supabase/functions/gecope-assistant/eval_run.ts` (novo)
 
-Script Deno. Uso, de dentro de `supabase/functions/gecope-assistant/`:
+Script Deno. O `deno.json` (config/tasks) vive em `supabase/functions/` — **um nível acima**
+de `gecope-assistant/` — porque é compartilhado entre as Edge Functions do projeto. Uso, de
+dentro de `supabase/functions/`:
 
 ```
 deno task eval          # só determinístico (intenções + segurança)
@@ -183,7 +185,7 @@ CONSTRUÇÕES'`. Existe também `CONSÓRCIO KG MARQUINHOS CONSTRUÇÕES` (+4). S
 | A | `deno task test` (de `supabase/functions/`) | `guards_test.ts` passa | **38/38 ok** |
 | B | `deno check` em `index.ts`, `eval_run.ts`, `llm.ts`, `guards.ts`, `motor_intencoes.ts` | compila, sem erro de tipo | **ok, os 5 módulos** |
 | C | `deno task eval` (com `SUPABASE_SERVICE_ROLE_KEY`) | `intencao_exata` ≥ 95%, `seguranca` 100% → `✅ METAS ATINGIDAS`, exit 0 | **intencao_exata 14/14 (100%), seguranca 8/8 (100%) — ✅ METAS ATINGIDAS.** (Sem a chave `service_role`, `int-06` falha lendo `processos` — RLS não libera `anon` nessa tabela; não é bug, ver nota no runner) |
-| D | `deno task eval:llm` (1×, com `GEMINI_API_KEY`) | snapshot registrado em `fase-3-revisao.md`; `llm_dado` ≥ 80%, `llm_nao_sei` ≥ 90% | **pendente** — aguardando chave utilizável (a do secret do Supabase não pode ser lida de volta); roda antes do deploy, junto com a checagem dos IDs de modelo (FU-77) |
+| D | `deno task eval:llm` (1×, com `GEMINI_API_KEY`) | snapshot registrado em `fase-3-revisao.md`; `llm_dado` ≥ 80%, `llm_nao_sei` ≥ 90% | **pendente** — aguardando chave utilizável (a do secret do Supabase não pode ser lida de volta); roda antes do deploy, junto com a checagem dos IDs de modelo (FU-77). **Cuidado (achado do `rev-correcao`):** sem `GEMINI_API_KEY` válida, a categoria `llm_nao_sei` também dá 100% — a cadeia de modelos falhando e uma recusa correta são indistinguíveis na taxa agregada. Ao rodar de verdade, conferir os `obs` de cada caso, não só o `%`. |
 | E | `git diff` do refactor `llm.ts` ↔ `index.ts` | só movimentação; nenhuma mudança de lógica | ok, conferido |
 | F | grep por segredo nos arquivos novos | limpo (`casos.jsonl` só tem perguntas + números públicos) | ok |
 
