@@ -22,6 +22,21 @@ const STATUS_OBRA = {
 
 const STATUS_PROCESSO_FORA_TRAMITACAO = ["APROVADO", "ARQUIVADO", "EXCLUÍDO"];
 
+// F5: valores confirmados de tipo_aditivo (schema_dicionario.md) — usados por
+// aditivos_por_tipo para reconhecer qual tipo foi mencionado na pergunta.
+// Ordenados por comprimento (desc) na hora de casar, para "Valor, vigência e
+// execução" não ser mascarado por "Valor" sozinho.
+const TIPOS_ADITIVO = [
+  "Valor, vigência e execução",
+  "Alteração Contratual Diversa",
+  "Vigência e execução",
+  "Reajuste de Preço",
+  "Sub-Rogação",
+  "Vigência",
+  "Execução",
+  "Valor",
+];
+
 // ---------------------------------------------------------------------------
 // Utilitários de extração de parâmetros
 // ---------------------------------------------------------------------------
@@ -118,6 +133,17 @@ function encontrarMencionado(pergunta: string, valoresConhecidos: string[]): str
     }
   }
 
+  return null;
+}
+
+/** F5: encontra qual tipo_aditivo (lista fixa, ver TIPOS_ADITIVO) foi
+ * mencionado na pergunta — mesma lógica de "mais específico primeiro" de
+ * encontrarMencionado, mas contra uma lista fixa em vez de valores do banco. */
+function encontrarTipoAditivo(pergunta: string): string | null {
+  const perguntaNorm = normalizar(pergunta);
+  for (const tipo of TIPOS_ADITIVO) {
+    if (perguntaNorm.includes(normalizar(tipo))) return tipo;
+  }
   return null;
 }
 
@@ -366,6 +392,9 @@ const intencoes: Intencao[] = [
     padroes: [
       /quantos?\s+contratos?.*(seduc|sesa|secretaria|contratante)/i,
       /contratos?.*(da|de)\s+(secretaria|contratante)/i,
+      // F5: "quantas obras a SOP contratou?" — mesma pergunta, sem a palavra
+      // "contrato(s)". contratante ainda vem de carregarValoresConhecidos.
+      /quantas?\s+obras?.*contratou/i,
     ],
     executar: async ({ supabase, pergunta }) => {
       const { contratantes } = await carregarValoresConhecidos(supabase);
@@ -707,6 +736,265 @@ const intencoes: Intencao[] = [
           ? `O contrato ${data.nr_contrato_sop} (${data.contratada_razao_social}) tem o maior percentual medido: ${data.percentual_total_medido?.toFixed(1)}%.`
           : "Nenhum contrato encontrado.",
         linhas: data ? 1 : 0,
+      };
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // F5 — primeira leva de expansão (~20 → ~34 intenções). Perguntas óbvias
+  // do domínio que hoje caem no caminho LLM (várias já tinham gabarito
+  // conferido na F3, ver docs/assistente/eval/casos.jsonl) e duas novas
+  // habilitadas pela F4 (vw_assistente_obra_completa): obras sem fiscal.
+  // Sem log de uso real ainda (piloto = F8) — guiado por conhecimento de
+  // domínio, não por análise de log. Registrado em fase-5-intencoes.md.
+  // ---------------------------------------------------------------------
+
+  // 26. Quantas obras estão em execução?
+  {
+    id: "total_obras_execucao",
+    padroes: [/obras?.*em\s+execu[cç][aã]o/i],
+    executar: async ({ supabase }) => {
+      const { count } = await supabase
+        .from("contratos_edificacao")
+        .select("*", { count: "exact", head: true })
+        .eq("status_obra", STATUS_OBRA.EM_EXECUCAO);
+      return {
+        origem: "intencao",
+        intencaoId: "total_obras_execucao",
+        resposta: `Existem ${count ?? 0} obras em execução.`,
+        linhas: count ?? 0,
+      };
+    },
+  },
+
+  // 27. Quantos processos existem no total? (distinto de "em tramitação")
+  {
+    id: "total_processos_geral",
+    padroes: [/quantos?\s+processos?\s+(existem|h[aá])\b/i, /processos?.*(no total|ao todo)\b/i],
+    executar: async ({ supabase }) => {
+      const { count } = await supabase.from("processos").select("*", { count: "exact", head: true });
+      return {
+        origem: "intencao",
+        intencaoId: "total_processos_geral",
+        resposta: `Existem ${count ?? 0} processos no total.`,
+        linhas: count ?? 0,
+      };
+    },
+  },
+
+  // 28. Quantos aditivos existem no total? (distinto de supressão/publicados/por tipo)
+  {
+    id: "total_aditivos_geral",
+    padroes: [/quantos?\s+aditivos?\s+(existem|h[aá])\b/i, /aditivos?.*(no total|ao todo)\b/i],
+    executar: async ({ supabase }) => {
+      const { count } = await supabase.from("aditivos_contrato").select("*", { count: "exact", head: true });
+      return {
+        origem: "intencao",
+        intencaoId: "total_aditivos_geral",
+        resposta: `Existem ${count ?? 0} aditivos no total.`,
+        linhas: count ?? 0,
+      };
+    },
+  },
+
+  // 29. Quais os tipos de aditivo e quantos de cada? (resumo — checar ANTES
+  // de aditivos_por_tipo: as duas compartilham a palavra "tipo").
+  {
+    id: "tipos_aditivo_resumo",
+    padroes: [/(tipos?\s+de\s+aditivo|aditivos?.*tipo).*(quantos?\s+de\s+cada|e\s+quantos)/i],
+    executar: async ({ supabase }) => {
+      const { data } = await supabase.from("aditivos_contrato").select("tipo_aditivo");
+      const contagem: Record<string, number> = {};
+      for (const r of data ?? []) contagem[r.tipo_aditivo] = (contagem[r.tipo_aditivo] ?? 0) + 1;
+      const entradas = Object.entries(contagem).sort((a, b) => b[1] - a[1]);
+      const detalhe = entradas.map(([tipo, n]) => `• ${tipo}: ${n}`).join("\n");
+      return {
+        origem: "intencao",
+        intencaoId: "tipos_aditivo_resumo",
+        resposta: `Tipos de aditivo:\n${detalhe}`,
+        linhas: entradas.length,
+        grafico: entradas.length > 1
+          ? { tipo: "barra", titulo: "Aditivos por tipo", rotulos: entradas.map(([t]) => t), valores: entradas.map(([, n]) => n) }
+          : undefined,
+      };
+    },
+  },
+
+  // 30. Quantos aditivos são do tipo X? / Quantos aditivos do tipo X existem?
+  {
+    id: "aditivos_por_tipo",
+    padroes: [/aditivos?\s+(s[aã]o\s+)?do\s+tipo\s+/i, /tipo\s+de\s+aditivo\s+/i],
+    executar: async ({ supabase, pergunta }) => {
+      const tipo = encontrarTipoAditivo(pergunta);
+      if (!tipo) return null; // não reconheceu o tipo — deixa o Gemini tentar
+      const { count } = await supabase
+        .from("aditivos_contrato")
+        .select("*", { count: "exact", head: true })
+        .eq("tipo_aditivo", tipo);
+      return {
+        origem: "intencao",
+        intencaoId: "aditivos_por_tipo",
+        resposta: `${count ?? 0} aditivos são do tipo ${tipo}.`,
+        linhas: count ?? 0,
+      };
+    },
+  },
+
+  // 31. Qual o município com mais contratos?
+  {
+    id: "municipio_mais_contratos",
+    padroes: [/munic[ií]pio.*mais\s+contratos/i],
+    executar: async ({ supabase }) => {
+      const { data } = await supabase.from("contratos_edificacao").select("municipio").not("municipio", "is", null);
+      const contagem: Record<string, number> = {};
+      for (const r of data ?? []) contagem[r.municipio] = (contagem[r.municipio] ?? 0) + 1;
+      const [municipio, qtd] = Object.entries(contagem).sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
+      return {
+        origem: "intencao",
+        intencaoId: "municipio_mais_contratos",
+        resposta: municipio ? `O município com mais contratos é ${municipio}, com ${qtd} contratos.` : "Nenhum município encontrado.",
+        linhas: 1,
+      };
+    },
+  },
+
+  // 32. Quais/quantas obras não têm fiscal designado? (habilitado pela F4 —
+  // mesmo anti-join que vw_assistente_obra_completa deixa em branco)
+  {
+    id: "obras_sem_fiscal",
+    padroes: [/obras?.*sem\s+fiscal|quantas?\s+obras?.*n[aã]o\s+t[eê]m?\s+fiscal/i],
+    executar: async ({ supabase }) => {
+      const { data: comFiscal } = await supabase
+        .from("comissao_fiscalizacao")
+        .select("id_obra")
+        .eq("tipo", "Fiscal");
+      const idsComFiscal = new Set((comFiscal ?? []).map((r: any) => r.id_obra));
+      const { data: obras } = await supabase
+        .from("contratos_edificacao")
+        .select("id_obra, descricao_obra, contratada");
+      const semFiscal = (obras ?? []).filter((o: any) => !idsComFiscal.has(o.id_obra));
+      const lista = semFiscal.slice(0, 10).map((o: any) => `• ${o.descricao_obra} (${o.contratada})`).join("\n");
+      return {
+        origem: "intencao",
+        intencaoId: "obras_sem_fiscal",
+        resposta: `${semFiscal.length} obras não têm fiscal designado.${lista ? "\n" + lista : ""}`,
+        linhas: semFiscal.length,
+      };
+    },
+  },
+
+  // 33. Quantos contratos estão vigentes / com vigência vencida?
+  {
+    id: "contratos_vigencia_status",
+    padroes: [/quantos?\s+contratos?\s+(est[aã]o\s+)?vigent(es)?\b/i, /quantos?\s+contratos?.*vig[eê]ncia\s+vencida/i],
+    executar: async ({ supabase, pergunta }) => {
+      const vencidos = /vencid/i.test(pergunta);
+      const status = vencidos ? "Vigência Vencida" : "Vigente";
+      const { count } = await supabase
+        .from("contratos_edificacao")
+        .select("*", { count: "exact", head: true })
+        .eq("status_contrato", status);
+      return {
+        origem: "intencao",
+        intencaoId: "contratos_vigencia_status",
+        resposta: vencidos
+          ? `${count ?? 0} contratos estão com vigência vencida.`
+          : `${count ?? 0} contratos estão vigentes.`,
+        linhas: count ?? 0,
+      };
+    },
+  },
+
+  // 34. Quantos distritos operacionais diferentes existem?
+  {
+    id: "total_distritos",
+    padroes: [/quantos?\s+distritos?\s+(operacionais?\s+)?(diferentes\s+)?(existem|h[aá])/i],
+    executar: async ({ supabase }) => {
+      const { distritos } = await carregarValoresConhecidos(supabase);
+      return {
+        origem: "intencao",
+        intencaoId: "total_distritos",
+        resposta: `Existem ${distritos.length} distritos operacionais diferentes.`,
+        linhas: distritos.length,
+      };
+    },
+  },
+
+  // 35. Quantas empresas contratadas diferentes existem?
+  {
+    id: "total_contratadas",
+    padroes: [/quantas?\s+empresas?\s+contratadas?\s+(diferentes\s+)?(existem|h[aá])/i],
+    executar: async ({ supabase }) => {
+      const { contratadas } = await carregarValoresConhecidos(supabase);
+      return {
+        origem: "intencao",
+        intencaoId: "total_contratadas",
+        resposta: `Existem ${contratadas.length} empresas contratadas diferentes.`,
+        linhas: contratadas.length,
+      };
+    },
+  },
+
+  // 36. Quantas fichas de contrato existem?
+  {
+    id: "total_fichas_contrato",
+    padroes: [/quantas?\s+fichas?\s+(de\s+contrato\s+)?(existem|h[aá])/i],
+    executar: async ({ supabase }) => {
+      const { count } = await supabase.from("ficha_contrato").select("*", { count: "exact", head: true });
+      return {
+        origem: "intencao",
+        intencaoId: "total_fichas_contrato",
+        resposta: `Existem ${count ?? 0} fichas de contrato.`,
+        linhas: count ?? 0,
+      };
+    },
+  },
+
+  // 37. Quantas medições foram registradas no total?
+  {
+    id: "total_medicoes",
+    padroes: [/quantas?\s+medi[cç][oõ]es?\s+(foram\s+registradas|existem|h[aá])/i],
+    executar: async ({ supabase }) => {
+      const { count } = await supabase.from("medicoes").select("*", { count: "exact", head: true });
+      return {
+        origem: "intencao",
+        intencaoId: "total_medicoes",
+        resposta: `Foram registradas ${count ?? 0} medições no total.`,
+        linhas: count ?? 0,
+      };
+    },
+  },
+
+  // 38. Qual o valor total dos contratos?
+  {
+    id: "valor_total_contratos",
+    padroes: [/valor\s+total\s+d(os|e)\s+contratos?\b/i],
+    executar: async ({ supabase }) => {
+      const { data } = await supabase.from("contratos_edificacao").select("valor_atual");
+      const total = (data ?? []).reduce((acc: number, r: any) => acc + Number(r.valor_atual ?? 0), 0);
+      return {
+        origem: "intencao",
+        intencaoId: "valor_total_contratos",
+        resposta: `O valor total dos contratos é de R$ ${total.toLocaleString("pt-BR")}.`,
+        linhas: data?.length ?? 0,
+      };
+    },
+  },
+
+  // 39. Qual distrito tem mais contratos?
+  {
+    id: "distrito_mais_contratos",
+    padroes: [/qual\s+distrito.*mais\s+contratos/i, /distrito.*maior\s+n[uú]mero\s+de\s+contratos/i],
+    executar: async ({ supabase }) => {
+      const { data } = await supabase.from("contratos_edificacao").select("distrito_operacional").not("distrito_operacional", "is", null);
+      const contagem: Record<string, number> = {};
+      for (const r of data ?? []) contagem[r.distrito_operacional] = (contagem[r.distrito_operacional] ?? 0) + 1;
+      const [distrito, qtd] = Object.entries(contagem).sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
+      return {
+        origem: "intencao",
+        intencaoId: "distrito_mais_contratos",
+        resposta: distrito ? `O distrito com mais contratos é ${distrito}, com ${qtd} contratos.` : "Nenhum distrito encontrado.",
+        linhas: 1,
       };
     },
   },
