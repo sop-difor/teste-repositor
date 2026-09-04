@@ -37,6 +37,10 @@ Confirmados como `GRANT SELECT` para a role `gecope_ia_readonly` em 03/09/2026.
 
 Definição completa em [`sql/assistente/f4_views.sql`](../../sql/assistente/f4_views.sql).
 
+**Convenção de nome (F4)**: views criadas para o assistente usam o prefixo `vw_assistente_*`
+— distinto de `vw_gecope_*` (domínio "revisão GECOPE × fiscal") e `vw_processos_financeiro`
+(painel financeiro pré-existente, anterior ao assistente).
+
 ## Fora do escopo — explicitamente proibido no v1
 
 | Domínio / objeto | Por quê está fora |
@@ -50,6 +54,17 @@ Definição completa em [`sql/assistente/f4_views.sql`](../../sql/assistente/f4_
 | Qualquer objeto **não** listado em "Dentro do escopo" | Regra geral: lista branca, não lista negra |
 
 ## Como o escopo é imposto (defesa em profundidade)
+
+**Nota (rev-seguranca, F4)**: `information_schema.role_table_grants` mostra `anon` e
+`authenticated` com `SELECT` (e mais) em qualquer view **nova** do schema `public` —
+inclusive as duas da F4 — por causa de um `ALTER DEFAULT PRIVILEGES` já configurado no
+banco, não por nada que este projeto concedeu. **O gate real não é esse `GRANT` de
+catálogo — é a RLS das tabelas-fonte.** Testado ao vivo (`SET ROLE anon`): o resultado das
+views novas para `anon` é idêntico ao de consultar as tabelas-fonte direto como `anon`
+(RLS zera exatamente do mesmo jeito). Rodar `select ... from information_schema.role_table_grants
+where grantee in ('anon','authenticated')` numa view e ver `SELECT` ali **não** significa
+exposição — confirmar sempre com uma leitura real (`SET ROLE` + `SELECT`), não só o
+catálogo de grants.
 
 1. **Grant** — `gecope_ia_readonly` recebeu `GRANT SELECT` **direcionado** apenas nos 13
    objetos do domínio (+ futuras views largas). Uma consulta a qualquer outra tabela do

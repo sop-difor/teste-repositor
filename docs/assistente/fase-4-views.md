@@ -45,7 +45,7 @@ na view).
 |---|---|
 | `contratos_edificacao` | `id_obra`, `codigo_obra`, `id_contrato`, `nr_contrato_sop`, `descricao_obra`, `contratada`, `contratante`, `municipio`, `distrito_operacional`, `status_obra`, `status_contrato`, `valor_original`, `total_aditivo`, `valor_atual`, `prazo_execucao`, `dias_aditivado`, `dias_paralisado`, `data_assinatura`, `data_fim_previsto`, `data_fim_vigencia_contrato` |
 | `ficha_contrato` (`LEFT JOIN` por `id_contrato` — 1:1, seguro) | `gestor_nome`, `total_medido`, `saldo_contrato`, `percentual_aditivo`, `percentual_total_medido`, `dias_a_vencer` |
-| `comissao_fiscalizacao` (`tipo='Fiscal'`, agregado via `LATERAL` por `id_obra`) | `fiscais` (nomes, `string_agg` — nunca duplica a obra), `fiscais_matriculas` |
+| `comissao_fiscalizacao` (`tipo='Fiscal'`, agregado via `LATERAL` por `id_obra`) | `fiscais` (nomes) e `fiscais_matriculas`, dos **mesmos pares** deduplicados e ordenados pela mesma chave — ver correção pós-revisão abaixo |
 | `processos` (agregado via `LATERAL` por `codigo_obra`) | `processos_total`, `processos_em_tramitacao`, `processos_numeros` (lista) |
 
 `LEFT JOIN`/`LATERAL` em tudo (nunca `INNER`) — obra sem ficha, sem fiscal ou sem processo
@@ -75,7 +75,28 @@ contexto da obra: `obra_descricao`, `obra_status`, `obra_nr_contrato_sop`,
   preferi-la a `JOIN`s manuais é trabalho da F6 ("prompt com as views largas"). A F4
   entrega a view; a F6 ensina o modelo a usá-la.
 
-## Como verificar a F4 — rodado ao vivo em 04/09/2026, todos OK
+## Correção pós-revisão (rodada 2, `rev-correcao` bloqueou a rodada 1)
+
+**Achado bloqueante**: `fiscais` e `fiscais_matriculas` eram dois `string_agg(distinct ...)`
+**independentes**, cada um ordenado pelo próprio valor agregado. Ordem alfabética de nome
+≠ ordem lexicográfica de matrícula — quando uma obra tinha 2 fiscais, as duas listas
+saíam "certas" isoladamente, mas o **pareamento posição-a-posição ficava errado**. Provado
+com dados reais: **7 das 9 obras com 2 fiscais (78%) mostravam a matrícula errada ao lado
+do nome errado**, sem nenhum sinal de erro visível (as duas colunas tinham o número certo
+de itens, só na ordem errada). Exatamente "número errado apresentado como certo" — critério
+bloqueante de `revisores.md`.
+
+**Correção**: as duas `string_agg` passaram a agregar sobre **um único subselect**
+(`select distinct nome_completo, matricula from comissao_fiscalizacao where ...`) — cada
+linha desse subselect já carrega o par nome+matrícula correto, e as duas `string_agg` são
+ordenadas pela **mesma chave** (`nome_completo`). Nome e matrícula nunca mais se separam.
+**Reconferido nas 9 obras reais com 2 fiscais — 9/9 corretas** (não só 1 exemplo, que foi o
+que deixou passar na rodada 1). Também alinhado o filtro de exclusão de `processos` para
+`excluido_por is null` (era `data_exclusao is null` — equivalente nos dados de hoje, mas
+diverge da coluna que as views `vw_gecope_revisao_*` já usam; follow-up não-bloqueante do
+mesmo `rev-correcao`).
+
+## Como verificar a F4 — rodado ao vivo em 04/09/2026, todos OK (pós-correção)
 
 | # | Verificação | Esperado | Resultado |
 |---|---|---|---|
@@ -88,6 +109,7 @@ contexto da obra: `obra_descricao`, `obra_status`, `obra_nr_contrato_sop`,
 | G | `select count(*) from vw_assistente_processo_completo` | = `processos where data_exclusao is null` | **416 = 416** ✅ (11 dos 427 processos têm `data_exclusao` preenchida) |
 | H | `... where obra_descricao is null` | ≈ 352 | **344** ✅ (dos 416 processos válidos, 344 sem `codigo_obra` vinculado) |
 | J | Obras com `processos_total > 1` | 3 | **3** ✅ |
+| K (nova, rodada 2) | Cruzar `fiscais`↔`fiscais_matriculas` com `comissao_fiscalizacao` nas **9** obras com 2 fiscais (não só 1) | par nome↔matrícula correto em todas | **9/9 corretas** ✅ |
 
 ## Fora do escopo da F4 (fases futuras)
 
