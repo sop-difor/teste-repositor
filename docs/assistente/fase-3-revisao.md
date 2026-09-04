@@ -113,4 +113,30 @@ Pendente antes do deploy único (F1+F2+F3):
 3. Conferência ao vivo pós-deploy com JWT real de um usuário do GECOPE (verificações F–K
    de `fase-2-nucleo.md`).
 
+## Deploy único (F1+F2+F3) — aplicado e conferido ao vivo (04/09/2026)
+
+`supabase functions deploy gecope-assistant` — v14 → **v17**, sobe `index.ts` + `guards.ts`
++ `llm.ts` + `motor_intencoes.ts` + `schema_prompt.ts`. Rollback = redeploy da v14
+(código pré-F1 em git, `782e86c`).
+
+Conferência ao vivo (checagens F–K de `fase-2-nucleo.md`):
+- Sem `Authorization`: `401` do próprio gateway do Supabase (`verify_jwt`).
+- Com a `anon key` como Bearer (JWT válido, mas não é usuário real): `401` da **nossa**
+  checagem (`auth.getUser`) — `"Sua sessão do GECOPE expirou..."`. Prova que a guarda de
+  identidade da F1 está ativa (a v14 antiga não tinha essa checagem).
+- Com sessão real do usuário (`nildeno.aragao@sop.ce.gov.br`), via `assistente.html`:
+  - 2 perguntas de intenção → `origem: intencao`, `sucesso: true`, respondidas na hora.
+    `usuario` no log = e-mail real da sessão (não "desconhecido", não falsificável pelo
+    corpo — confirma a guarda de identidade da F1 em uso real, não só em teste).
+  - 1 pergunta livre ("Quais as obras fiscalizadas pelo Roberto Bringel?") caiu no
+    caminho LLM e **degradou**: `origem: gemini_degradado`, `erro: "Modelo
+    gemini-3.5-flash-lite sobrecarregado (503)"` — a mesma cota diária gratuita já
+    esgotada nos testes da F3 (ver "Snapshot `--llm`" acima), não um bug novo. O ponto
+    que importa: degradou com a mensagem amigável (`MSG_DEGRADADO`), **não** com o erro
+    cru `42601` que a v14 antiga dava (comparado ao vivo com um registro real de
+    03/09/2026 no log, antes da correção). F2 funcionando em produção, não só em teste.
+
+**F1+F2+F3 confirmadas em produção — não só revisadas em código.** Estado registrado em
+`docs/assistente/README.md`.
+
 Depois: **F4** — views largas para Q&A.
