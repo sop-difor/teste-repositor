@@ -44,5 +44,10 @@
 
 ## Situação
 
-**F2 pronta**. Falta: usuário aplica `sql/assistente/f2_nucleo.sql` em produção +
-autoriza **um** `supabase functions deploy gecope-assistant` (cobre F1+F2). Depois: F3.
+**F2 aplicada em produção** (03/09/2026) — verificado ao vivo: `limit 3` → 3 linhas (era
+`42601`); `medicoes limit 1000` → 500 (cap externo); sem limit → 200; CTE → 127 linhas;
+`schema_to_xml`/`net.`/`WITH(DELETE)` → erram; `proconfig` = `statement_timeout=15s`.
+
+Pendente (não bloqueia a F3): **um** `supabase functions deploy gecope-assistant` para
+subir `index.ts`/`guards.ts`/`schema_prompt.ts` de F1+F2. Enquanto não deployar, a Edge
+Function roda a v12 (sem JWT real / cadeia de modelos / degradação nova).
