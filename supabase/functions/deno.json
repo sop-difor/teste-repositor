@@ -1,0 +1,13 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "jsr:@supabase/supabase-js@2"
+  },
+  "tasks": {
+    "test": "deno test --allow-net --allow-env gecope-assistant/guards_test.ts",
+    "eval": "deno run --allow-net --allow-env --allow-read gecope-assistant/eval_run.ts",
+    "eval:llm": "deno run --allow-net --allow-env --allow-read gecope-assistant/eval_run.ts --llm"
+  },
+  "fmt": {
+    "exclude": ["gecope-assistant/schema_dicionario.md"]
+  }
+}

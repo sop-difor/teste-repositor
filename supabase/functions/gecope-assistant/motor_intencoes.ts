@@ -76,6 +76,7 @@ const PALAVRAS_GENERICAS_ENTIDADE = new Set([
   // formais — sem isso, "da EMPRESA Consórcio X" casava com qualquer
   // pergunta que contivesse a palavra "empresa", independente do nome real
   "empresa", "contrato", "contratos", "obra", "obras", "grupo",
+  "processo", "processos", "replanilhamento", "aditivo", "aditivos", "medicao", "medicoes",
 ]);
 
 function extrairPalavrasChave(valor: string): string[] {

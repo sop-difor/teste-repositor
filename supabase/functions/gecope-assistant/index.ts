@@ -24,27 +24,13 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { tentarIntencao, type DadosGrafico } from "./motor_intencoes.ts";
-import { SCHEMA_PROMPT } from "./schema_prompt.ts";
-import {
-  validarSqlGeminiOuFalhar,
-  interpretarRespostaModelo,
-  type RespostaModelo,
-} from "./guards.ts";
+import { validarSqlGeminiOuFalhar, type RespostaModelo } from "./guards.ts";
+import { gerarSqlComGemini, MSG_DEGRADADO } from "./llm.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*", // restrinja ao domínio do GECOPE em produção
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-// F2: cadeia de fallback de modelo. Tenta em ordem; 404/400 (modelo removido) ->
-// próximo imediatamente; 503 (sobrecarga) -> 1 retry (sleep 1000ms) -> próximo.
-// Teto de 9s por requisição, ~24s no caminho todo. Todos falharam -> degradação
-// (o LLM tem "direito a falhar", ver docs/assistente/provedor-llm.md). IDs
-// conferidos em ai.google.dev/gemini-api/docs/models em set/2026 — "stable" da
-// free tier. Ao atualizar, conferir a lista lá.
-const GEMINI_MODELOS = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"];
-const geminiEndpoint = (modelo: string) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`;
 
 // ---------------------------------------------------------------------------
 // Converte qualquer valor em texto de forma segura — evita o clássico bug de
@@ -62,93 +48,8 @@ function paraTextoSeguro(valor: unknown): string {
   }
 }
 
-// Validação/saneamento do SQL do modelo: ver ./guards.ts (funções puras,
-// testadas em ./guards_test.ts; espelham as guardas de executar_consulta_ia).
-
-const GEMINI_TIMEOUT_MS = 9000;     // teto por requisição (fetch não tem timeout no Deno)
-const GEMINI_PRAZO_TOTAL_MS = 24000; // teto do caminho LLM inteiro — depois degrada
-
-// Uma só mensagem para todo "não deu" do caminho LLM (cadeia de modelos, SQL
-// inválido, execução falhou). Não é defeito do sistema — é "essa pergunta não
-// deu". Sem a palavra "segurança" (a causa costuma ser 503/rede/cota).
-const MSG_DEGRADADO =
-  "Não consegui responder a essa pergunta agora. Tente reformular de forma mais simples, ou use uma das perguntas sugeridas.";
-
-// ---------------------------------------------------------------------------
-// Chama o Gemini para gerar SQL a partir da pergunta em linguagem natural.
-// Percorre GEMINI_MODELOS; 503 -> 1 retry no mesmo modelo (sleep 1000ms) ->
-// próximo; 404/400 -> próximo direto. Cada requisição tem teto de 9s; o
-// caminho inteiro tem teto de ~24s. Esgotou -> lança (o chamador degrada).
-// ---------------------------------------------------------------------------
-async function gerarSqlComGemini(pergunta: string): Promise<RespostaModelo> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!apiKey) throw new Error("GEMINI_API_KEY não configurada nos secrets da função.");
-
-  const corpoRequisicao = JSON.stringify({
-    contents: [{ parts: [{ text: `${SCHEMA_PROMPT}\n\nPERGUNTA DO USUÁRIO: ${pergunta}` }] }],
-    generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
-  });
-
-  const prazoFinal = Date.now() + GEMINI_PRAZO_TOTAL_MS;
-  let ultimoErro: Error | null = null;
-
-  for (const modelo of GEMINI_MODELOS) {
-    for (let tentativa = 1; tentativa <= 2; tentativa++) {
-      if (Date.now() > prazoFinal) {
-        throw ultimoErro ?? new Error("Tempo esgotado no caminho LLM.");
-      }
-
-      let resposta: Response;
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), GEMINI_TIMEOUT_MS);
-      try {
-        resposta = await fetch(geminiEndpoint(modelo), {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
-          body: corpoRequisicao,
-          signal: ctrl.signal,
-        });
-      } catch (e) {
-        const abortado = e instanceof DOMException && e.name === "AbortError";
-        ultimoErro = new Error(`${abortado ? "Timeout" : "Rede"} ao chamar ${modelo}: ${e instanceof Error ? e.message : e}`);
-        break; // próximo modelo
-      } finally {
-        clearTimeout(timer);
-      }
-
-      if (resposta.ok) {
-        const dados = await resposta.json();
-        const textoGerado = dados?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!textoGerado) {
-          ultimoErro = new Error(`Resposta vazia de ${modelo}.`);
-          break; // próximo modelo
-        }
-        return interpretarRespostaModelo(textoGerado);
-      }
-
-      if (resposta.status === 503) {
-        ultimoErro = new Error(`Modelo ${modelo} sobrecarregado (503).`);
-        if (tentativa < 2 && Date.now() + 1000 < prazoFinal) {
-          await new Promise((r) => setTimeout(r, 1000));
-          continue; // 1 retry no mesmo modelo
-        }
-        break; // -> próximo modelo
-      }
-
-      if (resposta.status === 404 || resposta.status === 400) {
-        ultimoErro = new Error(`Modelo ${modelo} indisponível (${resposta.status}).`);
-        break; // -> próximo modelo, sem repetir
-      }
-
-      // 401 / 429 (cota) / 500 / outro
-      const corpoErro = (await resposta.text()).slice(0, 300);
-      ultimoErro = new Error(`Erro ${resposta.status} em ${modelo}: ${corpoErro}`);
-      break; // -> próximo modelo
-    }
-  }
-
-  throw ultimoErro ?? new Error("Todos os modelos da cadeia falharam.");
-}
+// Validação/saneamento do SQL do modelo: ./guards.ts (puras, testadas em
+// guards_test.ts). Chamada ao provedor com cadeia de fallback: ./llm.ts.
 
 // ---------------------------------------------------------------------------
 // Detecta automaticamente se um resultado do Gemini serve para virar gráfico:
