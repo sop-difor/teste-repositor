@@ -202,6 +202,15 @@ confirmar que os 3 IDs de `GEMINI_MODELOS` respondem e suportam `generateContent
 Conferência ao vivo pós-deploy (com JWT real de um usuário do GECOPE): verificações F–K de
 `fase-2-nucleo.md`.
 
+## Revisão desta fase
+
+4 lentes de `revisores.md`, com um ajuste combinado com o usuário para uma fase de
+andaime de teste (não é funcionalidade nova para quem usa o assistente):
+- `rev-produto` fica mais leve (não há UI nova para avaliar).
+- `rev-correcao` ganha um foco extra: **a folha de respostas está correta e a prova
+  realmente barra o que precisa barrar?** — não só "o script roda".
+- `rev-seguranca` e `rev-aderencia` seguem os critérios normais da lente.
+
 ## Fora do escopo da F3 (fases futuras)
 
 - Expandir o motor de intenções de ~19 para ~40–60 → **F5** (guiado pelo log).
