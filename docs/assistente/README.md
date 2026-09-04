@@ -54,8 +54,9 @@ devolverem `APROVADO`. `BLOQUEADO` volta para correção na mesma fase. Duas rod
 | F2 | **concluída** — 4/4 `APROVADO`, `f2_nucleo.sql` aplicado em produção 03/09/2026 ([`fase-2-revisao.md`](fase-2-revisao.md)) |
 | F3 | **concluída** — 4/4 `APROVADO` ([`fase-3-revisao.md`](fase-3-revisao.md)). Portão determinístico verde (`intencao_exata` 100%, `seguranca` 100%). Achou e corrigiu 1 bug em produção (`motor_intencoes.ts`) |
 | — | **Deploy F1+F2+F3 aplicado e conferido ao vivo em produção (04/09/2026)** — Edge Function v14→v17. JWT real ativo, cadeia de fallback de modelo + degradação amigável confirmadas com usuário real. Edge Function roda a versão revisada das 3 fases |
-| F4 | próxima — views largas para Q&A |
-| F5–F8 | não iniciadas |
+| F4 | **concluída** — 4/4 `APROVADO` após 1 ciclo de correção ([`fase-4-revisao.md`](fase-4-revisao.md)). `vw_assistente_obra_completa` (352 linhas) e `vw_assistente_processo_completo` (416 linhas) em produção |
+| F5 | próxima — expandir motor de intenções (~20 → ~40-60) |
+| F6–F8 | não iniciadas |
 
 ## Diagnóstico que motivou a iniciativa (03/09/2026)
 
