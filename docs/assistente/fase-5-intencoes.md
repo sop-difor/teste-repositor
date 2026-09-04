@@ -240,6 +240,31 @@ Reverificado: `deno check` limpo; os dois scripts de teste — agora com 20 caso
 (incluindo "investido", "preço" e o caso adversarial "preciso") e as 48 perguntas do
 gabarito completo — **20/20 e 48/48**.
 
+### Correção pós-revisão da rodada 4 (parte 2) — "total"/"montante"/"soma"
+
+`rev-correcao` bloqueou de novo, testando contra o commit anterior mesmo (achado
+independente do `rev-produto`, no mesmo veredito): "qual o **total**/**montante**/**soma**
+dos contratos no distrito de Crato?" (sem a palavra "valor") ainda escapava. Recomendação do
+revisor: parar de listar sinônimos e inverter a lógica (allowlist do formato "conta", não
+blocklist do formato "pede valor"). Avaliado e não adotado nesta rodada — o vocabulário de
+"pedir um total em R$" em português formal de governo é razoavelmente fechado (valor, custar,
+gastar, investir, valer, preço, montante, soma, "o total de X"), e trocar a estratégia agora
+significaria reescrever o gatilho de várias das 34 intenções (risco maior de regressão do que
+adicionar mais 3 palavras a uma lista já testada). Registrado como decisão a revisitar se uma
+5ª rodada achar mais um sinônimo.
+
+Adicionado: `montante`/`soma` (palavras sem ambiguidade neste domínio) e um padrão específico
+para "o total de/dos/da/das X" — **não** a palavra "total" sozinha, porque isso colidiria com
+"no total"/"ao todo" (usado por várias intenções de contagem já existentes, ex.: "quantos
+processos existem **no total**?" precisa continuar respondendo direto). O padrão exige o
+artigo "o"/"os" logo antes de "total(is)" e uma preposição partitiva logo depois — distingue a
+forma substantiva ("o total dos contratos" = pedido de soma em R$) da forma adverbial ("no
+total" = "ao todo", modificando uma pergunta de contagem).
+
+Reverificado: `deno check` limpo; scripts de teste — 25/25 casos-alvo (incluindo os 3 casos
+desta rodada e 2 casos adversariais confirmando que "no total" continua respondendo direto) e
+48/48 no gabarito completo.
+
 ## Fora do escopo desta leva
 
 - Chegar aos 40–60 previstos no README — ficou em 34 (+70% sobre as 20 originais).

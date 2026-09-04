@@ -203,14 +203,25 @@ function mencionaValorComoTermoDeDominio(p: string): boolean {
  * própria palavra "valor" — "cust*" (custa/custam/custou/custaram/custo),
  * "gast*" (gasto/gastos/gastou/gastaram), "investid*"/"investiment*"/
  * "investiu"/"investiram"/"investir" (não "investig*" — investigar não tem
- * nada a ver com dinheiro), "preç*", e as formas de "valer". */
+ * nada a ver com dinheiro), "preç*", "montante", "soma", e as formas de
+ * "valer". Achado do rev-correcao (F5, rodada 4): "montante"/"soma" também
+ * escapavam. */
 // testado contra o texto já normalizado (normalizar() remove acento E
 // cedilha — "preço" vira "preco"), por isso "precos?" sem cedilha aqui. De
 // propósito não aceita "prec" seguido de qualquer coisa (\w*), que pegaria
 // "preciso"/"precisar"/"precisão" (nada a ver com dinheiro) — só o "o(s)"
 // final de "preço(s)".
 const PALAVRAS_PEDIDO_DE_VALOR =
-  /\b(cust\w*|gast\w*|investid\w*|investiment\w*|investiu|investiram|investir|precos?|vale|valem|valeu|valeram)\b/;
+  /\b(cust\w*|gast\w*|investid\w*|investiment\w*|investiu|investiram|investir|precos?|montantes?|somas?|vale|valem|valeu|valeram)\b/;
+
+/** "o total de/dos/da/das X" (substantivo, pedindo A SOMA em R$) — não a
+ * mesma coisa que "no total"/"ao todo" (advérbio, usado por várias intenções
+ * de CONTAGEM já existentes: "quantos processos existem NO TOTAL?"). Exige
+ * o artigo "o"/"os" logo antes de "total(is)" e uma preposição partitiva
+ * logo depois, para não confundir as duas formas — achado do rev-correcao
+ * (F5, rodada 4): "qual o total dos contratos no distrito de Crato?"
+ * escapava do filtro de valor. */
+const PEDE_O_TOTAL_EM_RS = /\bos?\s+tota(l|is)\s+d(e|os|as|o|a)\b/;
 
 async function detectarFiltrosMencionados(supabase: SupabaseClient, pergunta: string): Promise<FiltrosMencionados> {
   const { distritos, contratadas, contratantes } = await carregarValoresConhecidos(supabase);
@@ -225,7 +236,7 @@ async function detectarFiltrosMencionados(supabase: SupabaseClient, pergunta: st
 
   const pedeValorMonetario =
     !mencionaValorComoTermoDeDominio(p) &&
-    (/\bvalor(es)?\b/.test(p) || PALAVRAS_PEDIDO_DE_VALOR.test(p));
+    (/\bvalor(es)?\b/.test(p) || PALAVRAS_PEDIDO_DE_VALOR.test(p) || PEDE_O_TOTAL_EM_RS.test(p));
 
   return {
     distrito: encontrarMencionado(pergunta, distritos),
