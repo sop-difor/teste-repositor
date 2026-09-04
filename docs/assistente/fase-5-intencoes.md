@@ -72,6 +72,60 @@ exige "processos" seguido **imediatamente** de "existem"/"há" — não casa com
 | C | `tentarIntencao` direto contra as 10 perguntas `llm_nao_sei`/`ambigua` | nenhuma intenção bate | ✅ **10/10 sem intenção** (nenhum sequestro) |
 | D | Valores conferidos contra produção antes de escrever o código (não depois) | bater | ✅ todos os 14 valores de referência vieram de SQL só-leitura rodada antes do código (ver commit) |
 
+## Correção pós-revisão (rodada 2) — 3 dos 4 auditores bloquearam
+
+**`rev-produto` bloqueou**: `total_obras_execucao`, `valor_total_contratos` e
+`obras_sem_fiscal` tinham regex sem âncora — "quantas obras estão em execução **no
+distrito de Crato**?" batia no padrão e devolvia o total **nacional** (221) como se fosse
+o recorte, sem avisar que o distrito foi ignorado. Número errado apresentado como certo.
+
+**`rev-correcao` bloqueou** (achado independente, mesma classe de bug, via leitura
+estática + testes reais):
+1. `contratos_vencendo` (`/contratos?.*venc/i`, intenção pré-existente, posição 2 do
+   array) casa em "venc**ida**" — sequestrava toda pergunta sobre "vigência vencida"
+   **antes** de `contratos_vigencia_status` (posição 33) ser alcançada. Os dois números
+   coincidiam em 15 por acaso hoje, escondendo que a intenção **errada** respondia (o eval
+   só confere o número, não qual intenção respondeu — achado à parte, ver FU-9).
+2. `contratos_por_distrito` (`/contratos?.*distrito/i`, pré-existente) casa "contrato"
+   como **prefixo** de "contrat**ou**" (sem `\b`) — "quantas obras a SOP **contratou** no
+   distrito de Crato?" batia essa intenção e devolvia o total do distrito **inteiro** (46),
+   ignorando o filtro por SOP.
+
+**`rev-aderencia` bloqueou** o mesmo achado do `rev-correcao` (item 1 acima), encontrado
+de forma independente por leitura estática do array.
+
+### Correção
+
+- `contratos_vencendo`: `/contratos?\b.*venc(?!id)/i` — exige borda de palavra e exclui
+  "vencid[ao]" (que agora é só de `contratos_vigencia_status`).
+- **Todo padrão do arquivo com `contratos?` sem borda de palavra** ganhou `\b` (achado do
+  `rev-correcao`: "padrões antigos e largos são ímã de colisão estrutural" — em vez de
+  corrigir só o caso relatado, apertei os ~8 padrões que tinham o mesmo risco).
+- `total_obras_execucao`: passou a aceitar filtro de distrito de verdade (mesma lógica de
+  `contratos_paralisados`) em vez de ignorá-lo.
+- Nova função `mencionaFiltroNaoSuportado(supabase, pergunta)`: `true` se a pergunta cita
+  um distrito/contratada/contratante conhecido. Intenções de "total geral" que não
+  implementam esse filtro (`total_processos_geral`, `total_aditivos_geral`,
+  `total_fichas_contrato`, `total_medicoes`, `total_distritos`, `total_contratadas`,
+  `valor_total_contratos`, `obras_sem_fiscal`, `contratos_vigencia_status`,
+  `tipos_aditivo_resumo`, `aditivos_por_tipo`) passaram a chamá-la primeiro e devolver
+  `null` (cede para o LLM) em vez de responder o total nacional como se fosse o recorte.
+  `municipio_mais_contratos`/`distrito_mais_contratos` usam uma checagem parcial (só
+  contratada/contratante — mencionar um distrito ali É a própria pergunta, não deveria
+  bloquear).
+- `contratos_por_contratante`: ganhou a mesma checagem específica para distrito (mantém a
+  checagem de contratante, que é o filtro que ela sabe aplicar).
+- `encontrarTipoAditivo` passou a reaproveitar `encontrarMencionado` (elimina a duplicação
+  que o `rev-aderencia` apontou como follow-up, e ganha de brinde o `.sort()` defensivo).
+- Comentário de `TIPOS_ADITIVO` corrigido (não é "comprimento decrescente" estrito — é
+  "cada valor antes de qualquer superstring sua na lista").
+
+**Reverificado**: `deno check` limpo; `deno task eval` → `intencao_exata` 32/32 (100%),
+`seguranca` 8/8 (100%); as 10 perguntas de recusa/ambíguas continuam sem intenção nenhuma
+batendo; e um script à parte testando as 8 perguntas exatas dos 3 achados (não só o
+número — o `intencaoId` que respondeu) — 8/8 corretas, incluindo o valor real de "obras em
+execução no distrito de Crato" = **23** (era 221 antes da correção).
+
 ## Fora do escopo desta leva
 
 - Chegar aos 40–60 previstos no README — ficou em 34 (+70% sobre as 20 originais).
