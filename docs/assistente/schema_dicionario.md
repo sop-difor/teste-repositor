@@ -201,6 +201,8 @@ Colunas relevantes em `curva_abc_itens`: `classe` (A/B/C), `valor`, `v_acresc`, 
 | `vw_gecope_revisao_anual` | revisão consolidada por ano |
 | `vw_gecope_revisao_consolidado` | revisão consolidada geral |
 | `vw_gecope_revisao_detalhe` | detalhe por processo do impacto da revisão GECOPE |
+| `vw_assistente_obra_completa` (**F4**) | uma linha por obra: contrato + ficha financeira + fiscal(is) (`fiscais`, `fiscais_matriculas`) + resumo de processos (`processos_total`, `processos_em_tramitacao`, `processos_numeros`) — usar em vez de `JOIN` manual entre `contratos_edificacao`/`ficha_contrato`/`comissao_fiscalizacao`/`processos` (esse `JOIN` tem fan-out: um `id_contrato` pode estar em até 14 obras, e uma obra pode ter até 2 fiscais) |
+| `vw_assistente_processo_completo` (**F4**) | uma linha por processo: todos os campos de `processos` + `em_tramitacao`/`delta_reperc` calculados + `obra_descricao`/`obra_status`/`obra_nr_contrato_sop`/`obra_valor_atual` quando o processo tem `codigo_obra` vinculado a uma obra existente (**maioria não tem** — 344 dos 416 processos válidos estão com esses campos em branco) |
 
 **Nota**: `vw_gecope_kpi_comparativo`, `vw_gecope_auditoria` e `vw_gecope_inconsistencias`
 foram mencionadas em conversas anteriores mas **não existem** neste banco — confirmado via
@@ -232,3 +234,6 @@ processos.id                     → curva_abc_versoes.processo_id
 - A tabela `processos` cobre exclusivamente processos de replanilhamento.
 - "Em tramitação" = `processos.status NOT IN ('APROVADO', 'ARQUIVADO', 'EXCLUÍDO')`.
 - `processos.status` e `contratos_edificacao.status_obra` são independentes — nunca confundir.
+- **`processos.codigo_obra` está vazio na maioria das linhas** (352/427 em 04/09/2026) —
+  a maior parte dos processos de replanilhamento ainda não está vinculada a uma obra
+  formal em `contratos_edificacao`. Não assumir que todo processo tem obra associada.

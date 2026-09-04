@@ -10,6 +10,7 @@ Pasta **viva** (mesmo modelo de `sql/reestruturacao_tabelas/`): os `.sql` ficam 
 |---|---|---|---|
 | `f1_seguranca.sql` | F1 | **aplicado 03/09/2026** | `REVOKE EXECUTE` de anon/authenticated; recria `executar_consulta_ia` com as guardas de segurança; 9 policies `ia_ro_select`; `consultas_ia_log` FORCE RLS |
 | `f2_nucleo.sql` | F2 | **aplicado 03/09/2026** | **Recria `executar_consulta_ia` por completo** — guardas da F1 intactas + corrige o bug do LIMIT, cap externo 500, aceita `WITH`, `statement_timeout 15s` |
+| `f4_views.sql` | F4 | **aplicado 04/09/2026** | Cria `vw_assistente_obra_completa` e `vw_assistente_processo_completo` (`security_invoker`); `GRANT SELECT` para `gecope_ia_readonly`. Não toca `executar_consulta_ia` |
 
 ## Regra importante
 

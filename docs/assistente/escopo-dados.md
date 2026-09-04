@@ -24,7 +24,7 @@ Confirmados como `GRANT SELECT` para a role `gecope_ia_readonly` em 03/09/2026.
 | `curva_abc_versoes` | Versões da curva ABC vinculada a um processo |
 | `curva_abc_itens` | Itens de cada versão da curva ABC |
 
-### Views (4)
+### Views (6)
 
 | Objeto | Papel |
 |---|---|
@@ -32,12 +32,10 @@ Confirmados como `GRANT SELECT` para a role `gecope_ia_readonly` em 03/09/2026.
 | `vw_gecope_revisao_anual` | Revisão consolidada por ano |
 | `vw_gecope_revisao_consolidado` | Revisão consolidada geral |
 | `vw_gecope_revisao_detalhe` | Detalhe por processo do impacto da revisão GECOPE |
+| `vw_assistente_obra_completa` (**F4**) | Uma linha por obra — contrato + ficha financeira + fiscal(is) + resumo de processos, sem `JOIN` manual (evita o fan-out de `id_contrato`/`comissao_fiscalizacao`) |
+| `vw_assistente_processo_completo` (**F4**) | Uma linha por processo de replanilhamento — todos os campos de negócio + contexto da obra vinculada quando existir (a maioria ainda não tem) |
 
-### A acrescentar na F4 — views largas para Q&A
-
-1–2 views desnormalizadas que já unem **contrato + obra + ficha + fiscal + distrito**, para
-o caminho LLM não precisar acertar `JOIN`. Especificação e nomes na F4; entram nesta lista
-e recebem `GRANT SELECT` para `gecope_ia_readonly` quando criadas.
+Definição completa em [`sql/assistente/f4_views.sql`](../../sql/assistente/f4_views.sql).
 
 ## Fora do escopo — explicitamente proibido no v1
 
