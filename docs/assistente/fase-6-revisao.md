@@ -37,8 +37,14 @@ primeira, com follow-ups pequenos já incorporados no mesmo commit.
 da F4 no prompt, tem rótulo de confiança alinhado ao `README.md`, e degrada com sugestões
 concretas em vez de texto genérico. Nenhuma mudança em segurança/banco nesta fase.
 
-**Ainda não publicada em produção** (só revisada/aprovada) — ver `README.md` para o estado
-de deploy antes de considerar isto em uso real.
+**Publicada em produção em 05/09/2026** (Edge Function v19→v20), conferida arquivo por
+arquivo/linha por linha contra o repositório antes de anunciar concluído (lição da F5) —
+`index.ts`/`guards.ts`/`llm.ts`/`schema_prompt.ts` bateram 100%; `motor_intencoes.ts` só
+com as mesmas 2 diferenças cosméticas já conhecidas da publicação da F5 (sem efeito de
+comportamento). Confirmado ao vivo pelo usuário no navegador: o SQL exibido mostra a IA já
+usando `vw_assistente_obra_completa` de verdade; badge "resposta gerada — confira"
+aparecendo; pergunta fora do escopo ("qual a previsão do tempo?") virou aviso neutro com as
+3 sugestões de degradação clicáveis.
 
 Próximo: **F7** — 👍/👎 + campo veredito no log; painel de uso/falhas; rotina "falha →
 intenção ou caso de eval". Depois: F8 (integração + piloto, com sign-off do usuário).
