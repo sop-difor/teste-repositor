@@ -29,7 +29,7 @@ export const MSG_DEGRADADO =
 // respondidas direto pelo motor de intenções (docs/assistente/eval/casos.jsonl).
 export const SUGESTOES_DEGRADACAO = [
   "Quantos contratos estão paralisados?",
-  "Contratos vencendo no próximo mês",
+  "Processos de replanilhamento em tramitação",
   "Qual contrato tem mais aditivos?",
 ];
 

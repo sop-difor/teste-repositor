@@ -52,6 +52,16 @@ mostra chips clicáveis grudados naquela mensagem específica.
 `esclarecimento` (pergunta ambígua) não muda — já pede o detalhe que falta, comportamento
 correto, fora do escopo desta fase.
 
+## Como verificar a F6
+
+| # | Verificação | Esperado | Resultado (05/09/2026) |
+|---|---|---|---|
+| A | `deno check` em `index.ts`, `llm.ts`, `schema_prompt.ts`, `motor_intencoes.ts`, `guards.ts` | compila | ✅ |
+| B | `node --check` no `<script>` extraído de `assistente.html` | sintaxe válida | ✅ |
+| C | Colunas de `vw_assistente_obra_completa`/`vw_assistente_processo_completo` no prompt batem com o schema real (`information_schema.columns`) | idênticas | ✅ (conferido pelo `rev-seguranca` na revisão — 31/31 colunas em cada view) |
+| D | Nenhum arquivo fora de `assistente.html` + os 4 arquivos de `supabase/functions/gecope-assistant/` tocado | só esses 5 (+ esta doc) | ✅ |
+| E | Teste manual no navegador, tema claro e escuro: link "Ver SQL gerado" abre/fecha o bloco; chips de sugestão da mensagem de degradação enviam a pergunta ao clicar | funciona nos dois temas | Pendente — depende do deploy da F6 (F5 já está em produção; F6 ainda não foi publicada nesta revisão) |
+
 ## Fora do escopo desta fase
 
 - Confidence score numérico do modelo — o projeto nunca prometeu isso (F0: fronteira
