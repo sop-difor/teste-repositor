@@ -57,7 +57,8 @@ devolverem `APROVADO`. `BLOQUEADO` volta para correção na mesma fase. Duas rod
 | F4 | **concluída** — 4/4 `APROVADO` após 1 ciclo de correção ([`fase-4-revisao.md`](fase-4-revisao.md)). `vw_assistente_obra_completa` (352 linhas) e `vw_assistente_processo_completo` (416 linhas) em produção |
 | F5 | **concluída e publicada em produção (05/09/2026)** — 4/4 `APROVADO` após 8 rodadas de correção ([`fase-5-revisao.md`](fase-5-revisao.md)). Primeira leva do motor de intenções: 20 → 34, guiada por conhecimento de domínio (piloto/log ainda não existe) ([`fase-5-intencoes.md`](fase-5-intencoes.md)). Mecanismo declarativo central (`filtrosSuportados` + `marcadorDeContagem`) fecha, de forma estrutural, a classe de "responder um recorte diferente do pedido sem avisar". Edge Function v17→v19, conferida ao vivo pelo usuário ("Quantos contratos estão vigentes?" → 337, resposta imediata) |
 | F6 | **concluída e publicada em produção (05/09/2026)** — 4/4 `APROVADO` ([`fase-6-revisao.md`](fase-6-revisao.md)). SQL gerado exibido ao usuário; prompt do LLM ganhou as views largas da F4; badge "resposta gerada — confira"; degradação anexa perguntas de exemplo. Edge Function v19→v20, conferida ao vivo pelo usuário — SQL exibido usa de fato `vw_assistente_obra_completa`, badge correto, sugestões de degradação funcionando |
-| F7–F8 | não iniciadas |
+| F7 | **concluída** — 4/4 `APROVADO` ([`fase-7-revisao.md`](fase-7-revisao.md)). 👍/👎 nas respostas; painel de uso/falhas (`assistente-painel.html`); purga automática de 180 dias (LGPD, prometida na F1) via `pg_cron`. **Ainda não publicada em produção** |
+| F8 | não iniciada |
 
 ## Diagnóstico que motivou a iniciativa (03/09/2026)
 
@@ -96,6 +97,8 @@ falhas: 3× HTTP 404, 4× HTTP 503, 6× erro `42601` da família `limit`, 1× `[
 | Caminho | O quê |
 |---|---|
 | `assistente.html` | Front-end do assistente (raiz do GECOPE) |
+| `assistente-painel.html` | Painel de uso/falhas do assistente (F7) — mesmo login do GECOPE, sem checagem de cargo |
+| `supabase/functions/gecope-assistant-painel/index.ts` | Edge Function só-leitura para o painel (F7) — agrega `consultas_ia_log` |
 | `supabase/functions/gecope-assistant/index.ts` | Edge Function — orquestra intenções + LLM + log |
 | `supabase/functions/gecope-assistant/motor_intencoes.ts` | Motor de intenções (regras) |
 | `supabase/functions/gecope-assistant/schema_prompt.ts` | Dicionário condensado de schema, injetado no prompt do LLM |

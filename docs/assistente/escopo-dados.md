@@ -97,9 +97,16 @@ Qualquer proposta de ampliar o escopo passa por: atualizar este documento → `G
 `consultas_ia_log` registra o **texto da pergunta**, que pode conter nome de fiscal,
 analista ou outra pessoa. Controles (F1):
 
-- RLS **on**; só o `service_role` (a Edge Function) lê e grava. Nenhum usuário nem admin
-  lê pela API.
+- RLS **on**; só o `service_role` escreve direto na tabela. Até a F6, também só ele lia.
+  **A partir da F7**, a função `gecope-assistant-painel` (usa `service_role` por trás,
+  exige sessão real do GECOPE) devolve o **texto** de pergunta/erro de qualquer usuário
+  para qualquer pessoa autenticada, sem checar cargo — decisão consciente do usuário
+  (`fase-7-feedback.md`, 05/09/2026; achado do rev-seguranca nessa revisão), a revisitar
+  quando o piloto (F8) definir quem administra o assistente. Continua valendo: nenhum
+  usuário/admin lê a tabela **direto** (sem passar pela Edge Function).
 - `usuario` no log = e-mail da sessão, derivado do JWT (não do corpo da requisição).
-- Retenção: purga de registros com mais de **180 dias** — job `pg_cron` na F7.
+- Retenção: purga de registros com mais de **180 dias** — job `pg_cron`
+  (`gecope-assistente-purga-log`, diário às 3h), implementado na F7
+  (`sql/assistente/f7_feedback.sql`).
 - O texto da pergunta **é** enviado ao provedor LLM (junto do schema, nunca linhas do
   banco) — ver [`provedor-llm.md`](provedor-llm.md).

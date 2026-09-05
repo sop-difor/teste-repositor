@@ -212,6 +212,24 @@ Deno.serve(async (req: Request) => {
   try {
     const corpo = await req.json();
 
+    // ---- 0b. Rate limit por usuário — antes de QUALQUER ação (pergunta ou
+    // feedback). Achado do rev-seguranca/rev-correcao (F7): o feedback não
+    // grava linha nova em consultas_ia_log, então esta contagem não mede
+    // votos em si — mas ainda impõe um teto combinado (quem já gastou as
+    // 40 perguntas da hora também não vota), suficiente dado que o pior
+    // caso de abuso aqui é reescrever o próprio voto repetidas vezes
+    // (eq("usuario", usuario) em registrarFeedback já limita ao próprio
+    // registro do usuário — sem efeito em dados de terceiros). ----
+    if (await limiteExcedido(supabase, usuario)) {
+      return new Response(
+        JSON.stringify({
+          resposta: `Limite de ${RATE_LIMITE_MAX} perguntas por hora atingido. Aguarde alguns minutos e continue.`,
+          origem: "limite",
+        }),
+        { status: 429, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
+
     // ---- F7: feedback sobre uma resposta já dada, não uma pergunta nova ----
     if (corpo.tipo === "feedback") {
       const resultado = await registrarFeedback(supabase, usuario, corpo.logId, corpo.veredito);
@@ -228,17 +246,6 @@ Deno.serve(async (req: Request) => {
         status: 400,
         headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
       });
-    }
-
-    // ---- 0b. Rate limit por usuário ----
-    if (await limiteExcedido(supabase, usuario)) {
-      return new Response(
-        JSON.stringify({
-          resposta: `Limite de ${RATE_LIMITE_MAX} perguntas por hora atingido. Aguarde alguns minutos e continue.`,
-          origem: "limite",
-        }),
-        { status: 429, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
-      );
     }
 
     // ---- 1. Tenta o motor de intenções primeiro (rápido, sem custo) ----

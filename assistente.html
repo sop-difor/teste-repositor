@@ -319,7 +319,8 @@
   /* ---------- F7: voto 👍/👎 sobre uma resposta ---------- */
   .feedback-turno {
     display: flex;
-    gap: 6px;
+    align-items: center;
+    gap: 8px;
     margin-top: 10px;
   }
   .feedback-btn {
@@ -335,6 +336,7 @@
   .feedback-btn:hover:not(:disabled) { opacity: 1; border-color: var(--accent); }
   .feedback-btn:disabled { cursor: default; }
   .feedback-btn-escolhido { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+  .feedback-status { font-size: 12px; color: var(--text-tertiary); }
 
   .digitando { display: flex; gap: 4px; padding: 6px 0; }
   .digitando span {
@@ -733,6 +735,12 @@
       const conteudo = turno.querySelector(".conteudo-assistente");
       const wrap = document.createElement("div");
       wrap.className = "feedback-turno";
+      // Achado do rev-produto (F7): só os emojis, sem rótulo, podem não ser
+      // óbvios pra quem não usa apps de chat no dia a dia.
+      const rotuloFeedback = document.createElement("span");
+      rotuloFeedback.className = "feedback-status";
+      rotuloFeedback.textContent = "Essa resposta ajudou?";
+      wrap.appendChild(rotuloFeedback);
       const btnPositivo = document.createElement("button");
       btnPositivo.type = "button";
       btnPositivo.className = "feedback-btn";
@@ -743,18 +751,35 @@
       btnNegativo.className = "feedback-btn";
       btnNegativo.setAttribute("aria-label", "Resposta não ajudou");
       btnNegativo.textContent = "👎";
+      // Achado do rev-produto (F7): a Edge Function já devolvia "Obrigado
+      // pelo retorno", mas o front-end nunca mostrava — só a cor do botão
+      // mudava, sutil demais. E marcar como votado ANTES de saber se deu
+      // certo fazia a tela "mentir" se a sessão caiu ou a rede falhou.
+      const status = document.createElement("span");
+      status.className = "feedback-status";
+      status.hidden = true;
 
       const votar = async (veredito, botaoClicado) => {
         btnPositivo.disabled = true;
         btnNegativo.disabled = true;
-        botaoClicado.classList.add("feedback-btn-escolhido");
-        await enviarFeedback(logId, veredito);
+        status.hidden = false;
+        status.textContent = "Enviando…";
+        const deuCerto = await enviarFeedback(logId, veredito);
+        if (deuCerto) {
+          botaoClicado.classList.add("feedback-btn-escolhido");
+          status.textContent = "Obrigado pelo retorno.";
+        } else {
+          status.textContent = "Não consegui registrar. Tente de novo.";
+          btnPositivo.disabled = false;
+          btnNegativo.disabled = false;
+        }
       };
       btnPositivo.addEventListener("click", () => votar("positivo", btnPositivo));
       btnNegativo.addEventListener("click", () => votar("negativo", btnNegativo));
 
       wrap.appendChild(btnPositivo);
       wrap.appendChild(btnNegativo);
+      wrap.appendChild(status);
       conteudo.appendChild(wrap);
     }
 
@@ -793,14 +818,14 @@
     document.getElementById("turnoDigitando")?.remove();
   }
 
-  // F7: envia o voto 👍/👎 sobre uma resposta já dada. Falha em silêncio (só
-  // loga no console) — perder um voto não é motivo pra incomodar o usuário
-  // com um erro, o botão já ficou desabilitado/marcado do lado do usuário.
+  // F7: envia o voto 👍/👎 sobre uma resposta já dada. Devolve true/false —
+  // achado do rev-produto: marcar como "votado" sem saber se funcionou faz a
+  // tela "mentir" pro usuário quando a sessão caiu ou a rede falhou.
   async function enviarFeedback(logId, veredito) {
     try {
       const token = await obterTokenSessao();
-      if (!token) return;
-      await fetch(EDGE_FUNCTION_URL, {
+      if (!token) return false;
+      const resposta = await fetch(EDGE_FUNCTION_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -809,8 +834,10 @@
         },
         body: JSON.stringify({ tipo: "feedback", logId, veredito }),
       });
+      return resposta.ok;
     } catch (e) {
       console.error("Falha ao enviar feedback:", e);
+      return false;
     }
   }
 

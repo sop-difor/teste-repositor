@@ -136,6 +136,14 @@
   th { color: var(--text-tertiary); font-weight: 500; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.02em; }
   tr:last-child td { border-bottom: none; }
   td.pergunta { max-width: 360px; }
+  .sql-mini {
+    margin-top: 4px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
   .tag {
     display: inline-block;
     font-size: 11px;
@@ -219,16 +227,25 @@
     const linhasProblemas = dados.problemas.length
       ? dados.problemas.map((p) => `
           <tr>
+            <td>${p.id}</td>
             <td>${new Date(p.criadoEm).toLocaleString("pt-BR")}</td>
-            <td class="pergunta">${escaparHtml(p.pergunta)}</td>
+            <td class="pergunta">
+              ${escaparHtml(p.pergunta)}
+              ${p.sqlGerado ? `<div class="sql-mini">${escaparHtml(p.sqlGerado)}</div>` : ""}
+            </td>
             <td><span class="tag">${escaparHtml(ROTULO_ORIGEM[p.origem] ?? p.origem ?? "—")}</span></td>
             <td>${p.erro ? `<span class="erro-texto">${escaparHtml(p.erro)}</span>` : "—"}</td>
             <td>${p.veredito === "negativo" ? '<span class="tag tag-negativo">👎</span>' : p.veredito === "positivo" ? '<span class="tag">👍</span>' : "—"}</td>
           </tr>
         `).join("")
-      : `<tr><td colspan="5" class="vazio">Nenhuma falha ou 👎 registrado ainda.</td></tr>`;
+      : `<tr><td colspan="6" class="vazio">Nenhuma falha ou 👎 registrado ainda.</td></tr>`;
 
     conteudo.innerHTML = `
+      <p class="aviso" style="margin-bottom:20px;">
+        Página de acompanhamento do assistente — destinada a quem administra o assistente.
+        As perguntas abaixo são de todos os usuários; trate como dado sensível (pode conter
+        nome de fiscal/analista) e não compartilhe fora do GECOPE.
+      </p>
       ${avisoTruncado}
       <div class="cartoes">
         <div class="cartao"><div class="numero">${dados.total}</div><div class="rotulo">Perguntas (últimas)</div></div>
@@ -243,7 +260,7 @@
       <p class="subtitulo">Matéria-prima da rotina de revisão — ver <code>docs/assistente/rotina-revisao-falhas.md</code>.</p>
       <div class="tabela-wrap">
         <table>
-          <thead><tr><th>Quando</th><th>Pergunta</th><th>Origem</th><th>Erro</th><th>Voto</th></tr></thead>
+          <thead><tr><th>Id</th><th>Quando</th><th>Pergunta / SQL gerado</th><th>Origem</th><th>Erro</th><th>Voto</th></tr></thead>
           <tbody>${linhasProblemas}</tbody>
         </table>
       </div>

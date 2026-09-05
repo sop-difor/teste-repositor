@@ -24,13 +24,31 @@ alter table public.consultas_ia_log
 comment on column public.consultas_ia_log.veredito is
   'F7 (assistente): voto do usuário sobre a resposta — positivo (👍) / negativo (👎) / null (sem voto). Gravado via UPDATE da Edge Function, nunca escrito direto pelo navegador.';
 
--- Acelera as duas consultas do painel de observabilidade (F7): "quantas
--- falharam/tiveram 👎" e "lista das mais recentes com problema".
+-- Índice parcial cobrindo as linhas que a rotina de revisão (F7,
+-- docs/assistente/rotina-revisao-falhas.md) precisa achar rápido: falhas e
+-- 👎. Hoje a função gecope-assistant-painel ainda traz tudo e filtra em JS
+-- (achado do rev-correcao) — este índice serve para quando essa consulta
+-- passar a filtrar no banco, sem precisar de outra migração depois.
 create index if not exists consultas_ia_log_problemas_idx
   on public.consultas_ia_log (created_at desc)
   where sucesso is false or veredito = 'negativo';
 
 commit;
+
+-- ============================================================================
+-- Purga de retenção (LGPD) — prometida na F1 (fase-1-seguranca.md) e em
+-- escopo-dados.md ("retenção: purga de registros com mais de 180 dias — job
+-- pg_cron na F7"), não implementada até agora. Achado do rev-seguranca nesta
+-- revisão; decisão do usuário (05/09/2026): implementar já, não adiar para
+-- a F8. `pg_cron` já está instalado neste projeto (usado por
+-- sincronizar-suite-horario). `cron.schedule` é idempotente pelo nome do
+-- job — rodar de novo apenas atualiza o agendamento, não duplica.
+-- ============================================================================
+select cron.schedule(
+  'gecope-assistente-purga-log',
+  '0 3 * * *', -- todo dia às 3h (fora do horário comercial do job de sincronizar-suite)
+  $$ delete from public.consultas_ia_log where created_at < now() - interval '180 days'; $$
+);
 
 -- ============================================================================
 -- Bloco de verificação (rodar manualmente após aplicar, não faz parte da
@@ -44,6 +62,9 @@ commit;
 --    -- deve FALHAR (violação do check) — depois desfazer o teste do B:
 --    update consultas_ia_log set veredito = null where id = (select id from consultas_ia_log order by id desc limit 1);
 -- D: select has_table_privilege('authenticated', 'public.consultas_ia_log', 'UPDATE'); -- false (RLS da F1 intacta)
+-- E: select jobname, schedule, active from cron.job where jobname = 'gecope-assistente-purga-log'; -- 1 linha, active=true
+-- F: select public.consultas_ia_log.* from public.consultas_ia_log
+--      where created_at < now() - interval '180 days' limit 5; -- confira que o que apareceria aqui é mesmo o que deve ser apagado
 
 -- ============================================================================
 -- ROLLBACK (se necessário)
@@ -53,3 +74,4 @@ commit;
 -- alter table public.consultas_ia_log drop constraint if exists consultas_ia_log_veredito_check;
 -- alter table public.consultas_ia_log drop column if exists veredito;
 -- commit;
+-- select cron.unschedule('gecope-assistente-purga-log');

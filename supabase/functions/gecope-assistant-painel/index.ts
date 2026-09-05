@@ -31,6 +31,7 @@ type LinhaLog = {
   id: number;
   usuario: string | null;
   pergunta: string;
+  sql_gerado: string | null;
   origem: string | null;
   sucesso: boolean | null;
   erro: string | null;
@@ -68,7 +69,7 @@ Deno.serve(async (req: Request) => {
   try {
     const { data, error } = await supabase
       .from("consultas_ia_log")
-      .select("id, usuario, pergunta, origem, sucesso, erro, veredito, created_at")
+      .select("id, usuario, pergunta, sql_gerado, origem, sucesso, erro, veredito, created_at")
       .order("created_at", { ascending: false })
       .limit(LIMITE_LINHAS_AGREGACAO);
 
@@ -97,6 +98,12 @@ Deno.serve(async (req: Request) => {
       .map((l) => ({
         id: l.id,
         pergunta: l.pergunta,
+        // F7 (achado do rev-produto): a rotina de revisão
+        // (rotina-revisao-falhas.md) pede pra olhar o SQL gerado antes de
+        // decidir — sem isso no painel, quem revisa tinha que cruzar por
+        // fora (SQL Editor) usando id/data. Truncado: é só um indício
+        // rápido, não uma ferramenta de depuração completa.
+        sqlGerado: l.sql_gerado ? l.sql_gerado.slice(0, 300) : null,
         origem: l.origem,
         erro: l.erro,
         veredito: l.veredito,
