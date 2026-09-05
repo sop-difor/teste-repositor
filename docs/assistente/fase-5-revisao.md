@@ -56,5 +56,28 @@ forma estrutural, a classe inteira de "responder um recorte diferente do pedido 
 — tanto para filtros ignorados (distrito/empresa/status) quanto para contagem-vs-valor.
 Nenhuma mudança em banco, Edge Function ou segurança nesta fase.
 
+## Publicação em produção (05/09/2026)
+
+A F5 foi revisada e aprovada, mas **nunca chegou a ser publicada** — só percebido ao começar
+a F6 (que mexe nos mesmos arquivos) e conferir a versão ativa da Edge Function (ainda v17,
+a mesma do deploy F1+F2+F3). Publicada via MCP do Supabase, v17→v19.
+
+Incidente no meio do processo: o primeiro deploy (v18) foi enviado com o conteúdo de
+`motor_intencoes.ts` errado (um texto de espaço reservado, por engano de transcrição) —
+**produção ficou quebrada por alguns minutos**. Corrigido imediatamente com um segundo
+deploy (v19) com o conteúdo correto, e desta vez conferido **arquivo por arquivo, linha por
+linha** contra o repositório antes de dar como resolvido (script Node comparando o conteúdo
+publicado com o local): 4 dos 5 arquivos bateram 100%; `motor_intencoes.ts` teve só 2 linhas
+com diferença puramente cosmética (uma forma equivalente de escrever a mesma faixa de
+caracteres Unicode no código; um acento faltando dentro de um comentário) — nenhuma
+diferença de comportamento. Reconfirmado ao vivo pelo usuário: "Quantos contratos estão
+vigentes?" → "337 contratos estão vigentes." com o rótulo "resposta imediata", batendo com o
+número já conferido em todas as rodadas de revisão.
+
+**Lição**: ao publicar uma Edge Function por este caminho (colar o conteúdo de cada arquivo
+manualmente, sem `supabase functions deploy` local), conferir o que foi publicado contra o
+repositório antes de declarar concluído — não confiar que "o deploy não deu erro" significa
+"o conteúdo certo foi enviado".
+
 Próximo: **F6** — isolar `gerarSql()`, prompt com as views largas da F4, exibir o SQL
 gerado, marcar confiança, degradar para sugestões. Ver `README.md` para o roteiro completo.
