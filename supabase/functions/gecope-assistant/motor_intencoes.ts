@@ -223,6 +223,30 @@ const PALAVRAS_PEDIDO_DE_VALOR =
  * escapava do filtro de valor. */
 const PEDE_O_TOTAL_EM_RS = /\bos?\s+tota(l|is)\s+d(e|os|as|o|a)\b/;
 
+/** Achado consolidado de `rev-correcao`/`rev-produto` (F5, rodada 5, 4ª e 5ª
+ * vez seguida bloqueando o mesmo detector de valor): uma lista de palavras
+ * de "pede dinheiro" nunca converge — cada rodada achou mais uma leva nova e
+ * coerente (frases exatas → verbos → total/montante/soma → vocabulário
+ * orçamentário inteiro do serviço público: empenhado, despesa, recursos,
+ * desembolso, quantia...). É a única checagem das 5 (`distrito`/
+ * `contratada`/`contratante`/`statusVigencia`/`valor`) que depende de
+ * enumerar vocabulário aberto em vez de um conjunto fechado.
+ *
+ * Correção estrutural: em vez de continuar tentando reconhecer TODA forma de
+ * pedir dinheiro, as intenções que só sabem CONTAR (não somar em R$) passam
+ * a exigir uma palavra interrogativa de contagem inequívoca — "quantos",
+ * "quantas" ou "quais" — em vez de responder para qualquer frase que só
+ * mencione o assunto (ex.: "contratos" + "distrito"). Note que é
+ * "quantos/quantas" (PLURAL) e não "quanto/quanta" (singular) — em
+ * português, o singular "quanto" é a forma de PERGUNTAR UM VALOR ("quanto
+ * custa", "quanto foi gasto"), o oposto exato do que queremos exigir aqui.
+ * Aplicada só às intenções cujo uso real no gabarito já inclui essa palavra
+ * (não regride nenhum caso testado) — duas intenções ficaram de fora
+ * (`contratos_vencendo`, `obras_prazo_execucao_encerrando`) porque o gabarito
+ * as aciona sem "quantos/quantas/quais" (estilo tópico: "Contratos vencendo
+ * no próximo mês"); essas continuam protegidas só pela lista de vocabulário. */
+const TEM_MARCADOR_DE_CONTAGEM = /\b(quais|quantos|quantas)\b/i;
+
 async function detectarFiltrosMencionados(supabase: SupabaseClient, pergunta: string): Promise<FiltrosMencionados> {
   const { distritos, contratadas, contratantes } = await carregarValoresConhecidos(supabase);
   const p = normalizar(pergunta);
@@ -323,6 +347,15 @@ interface Intencao {
    * fosse a resposta certa. Lista vazia = intenção "geral", sem nenhum
    * recorte aplicável — qualquer qualificador mencionado a faz ceder. */
   filtrosSuportados: TipoFiltro[];
+  /** F5 rodada 5: true para intenções que só sabem CONTAR (nunca somar em
+   * R$) e cujo gatilho, sozinho, é amplo demais (ex.: só "contratos" +
+   * "distrito", sem exigir uma palavra de contagem) — exige também
+   * TEM_MARCADOR_DE_CONTAGEM na pergunta, para não responder uma contagem
+   * quando a pergunta pede um valor com um sinônimo ainda não catalogado em
+   * PALAVRAS_PEDIDO_DE_VALOR. Opcional: omitido (`undefined`) equivale a
+   * `false` — o gatilho já é específico o bastante ou não tem um valor
+   * monetário plausível como interpretação alternativa. */
+  exigeMarcadorDeContagem?: boolean;
   // Pode devolver null quando o padrão bateu mas os dados necessários (ex: nome
   // de empresa) não foram encontrados — nesse caso, tentarIntencao() segue
   // tentando outras intenções, e por fim cai no fallback do Gemini, em vez de
@@ -340,6 +373,7 @@ const intencoes: Intencao[] = [
     id: "contratos_paralisados",
     padroes: [/contratos?\b.*paralisad/i, /obras?.*paralisad/i],
     filtrosSuportados: ["distrito"],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase, pergunta }) => {
       const { distritos } = await carregarValoresConhecidos(supabase);
       const distrito = encontrarMencionado(pergunta, distritos);
@@ -446,6 +480,7 @@ const intencoes: Intencao[] = [
     id: "obras_por_contratada",
     padroes: [/(obras?|contratos?\b).*(empresa|construtora|contratada|secretaria|contratante)/i],
     filtrosSuportados: ["contratada", "contratante"],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase, pergunta }) => {
       const { contratadas, contratantes } = await carregarValoresConhecidos(supabase);
       // achado do rev-seguranca/rev-correcao (F5, rodada 3): antes, achar uma
@@ -486,6 +521,7 @@ const intencoes: Intencao[] = [
     id: "contratos_aguardando_os",
     padroes: [/aguardando\s+os\b/i, /contratos?\b.*aguard.*\bos\b/i],
     filtrosSuportados: [],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase }) => {
       const { data, count } = await supabase
         .from("contratos_edificacao")
@@ -511,6 +547,7 @@ const intencoes: Intencao[] = [
     // distrito certo) — sempre um número maior/errado, sem aviso.
     padroes: [/contratos?\b.*distrito/i, /quantos?\s+contratos?\b.*em\s+[A-ZÀ-Ú]/],
     filtrosSuportados: ["distrito"],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase, pergunta }) => {
       const { distritos } = await carregarValoresConhecidos(supabase);
       const distrito = encontrarMencionado(pergunta, distritos);
@@ -545,6 +582,7 @@ const intencoes: Intencao[] = [
       /quantas?\s+obras?.*contratou/i,
     ],
     filtrosSuportados: ["contratante"],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase, pergunta }) => {
       const { contratantes } = await carregarValoresConhecidos(supabase);
       const contratante = encontrarMencionado(pergunta, contratantes);
@@ -598,6 +636,7 @@ const intencoes: Intencao[] = [
     id: "processos_em_tramitacao",
     padroes: [/processos?.*(tramita|andamento)/i, /processos?\s+de\s+replanilhamento/i],
     filtrosSuportados: ["contratada"],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase, pergunta }) => {
       const { contratadas } = await carregarValoresConhecidos(supabase);
       const empresa = encontrarMencionado(pergunta, contratadas);
@@ -624,6 +663,7 @@ const intencoes: Intencao[] = [
     id: "processos_por_empresa",
     padroes: [/processos?.*(empresa|construtora|contratada)/i],
     filtrosSuportados: ["contratada"],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase, pergunta }) => {
       const { contratadas } = await carregarValoresConhecidos(supabase);
       const empresa = encontrarMencionado(pergunta, contratadas);
@@ -816,6 +856,7 @@ const intencoes: Intencao[] = [
     id: "contratos_percentual_aditivo_alto",
     padroes: [/percentual.*aditivo.*(acima|maior)/i, /contratos?\b.*25\s*%/],
     filtrosSuportados: [],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase }) => {
       const { data, count } = await supabase
         .from("ficha_contrato")
@@ -922,6 +963,7 @@ const intencoes: Intencao[] = [
     id: "total_obras_execucao",
     padroes: [/obras?.*em\s+execu[cç][aã]o/i],
     filtrosSuportados: ["distrito"],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase, pergunta }) => {
       const { distritos } = await carregarValoresConhecidos(supabase);
       const distrito = encontrarMencionado(pergunta, distritos);
@@ -948,6 +990,7 @@ const intencoes: Intencao[] = [
     id: "total_processos_geral",
     padroes: [/quantos?\s+processos?\s+(existem|h[aá])\b/i, /processos?.*(no total|ao todo)\b/i],
     filtrosSuportados: [],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase }) => {
       const { count } = await supabase.from("processos").select("*", { count: "exact", head: true });
       return {
@@ -964,6 +1007,7 @@ const intencoes: Intencao[] = [
     id: "total_aditivos_geral",
     padroes: [/quantos?\s+aditivos?\s+(existem|h[aá])\b/i, /aditivos?.*(no total|ao todo)\b/i],
     filtrosSuportados: [],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase }) => {
       const { count } = await supabase.from("aditivos_contrato").select("*", { count: "exact", head: true });
       return {
@@ -1004,6 +1048,7 @@ const intencoes: Intencao[] = [
     id: "aditivos_por_tipo",
     padroes: [/aditivos?\s+(s[aã]o\s+)?do\s+tipo\s+/i, /tipo\s+de\s+aditivo\s+/i],
     filtrosSuportados: [],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase, pergunta }) => {
       const tipo = encontrarTipoAditivo(pergunta);
       if (!tipo) return null; // não reconheceu o tipo — deixa o Gemini tentar
@@ -1045,6 +1090,7 @@ const intencoes: Intencao[] = [
     id: "obras_sem_fiscal",
     padroes: [/obras?.*sem\s+fiscal/i, /quantas?\s+obras?.*n[aã]o\s+t[eê]m?\s+fiscal/i],
     filtrosSuportados: [],
+    exigeMarcadorDeContagem: true,
     executar: async ({ supabase }) => {
       const { data: comFiscal } = await supabase
         .from("comissao_fiscalizacao")
@@ -1215,6 +1261,11 @@ export async function tentarIntencao(
     // por fim, cai no caminho LLM, que tenta o filtro de verdade.
     const filtroNaoSuportado = mencionados.some((tipo) => !intencao.filtrosSuportados.includes(tipo));
     if (filtroNaoSuportado) continue;
+
+    // F5 rodada 5: para intenções só-contagem com gatilho amplo, exige uma
+    // palavra de contagem inequívoca — fecha a classe de "pede valor com um
+    // sinônimo não catalogado" sem depender de listar cada sinônimo.
+    if (intencao.exigeMarcadorDeContagem && !TEM_MARCADOR_DE_CONTAGEM.test(pergunta)) continue;
 
     const resultado = await intencao.executar({ supabase, pergunta });
     if (resultado !== null) return resultado;

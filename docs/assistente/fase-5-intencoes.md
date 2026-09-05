@@ -265,6 +265,50 @@ Reverificado: `deno check` limpo; scripts de teste — 25/25 casos-alvo (incluin
 desta rodada e 2 casos adversariais confirmando que "no total" continua respondendo direto) e
 48/48 no gabarito completo.
 
+### Correção pós-revisão da rodada 5 — vira estrutural de vez
+
+`rev-produto` e `rev-correcao` bloquearam de novo, **os dois pela 5ª vez seguida no mesmo
+ponto**, e desta vez os dois concordaram explicitamente: o problema não é faltar mais um
+sinônimo, é o método. `rev-produto` achou "despesa"/"dispêndio"/"pago" escapando —
+"despesa" em especial é vocabulário central de execução orçamentária pública (empenho →
+liquidação → pagamento/despesa), não um caso de canto. `rev-correcao` foi além: achou que o
+mesmo vazamento se repete em **4 intenções diferentes** (`contratos_por_distrito`,
+`total_aditivos_geral`, `total_processos_geral`, `total_obras_execucao`) sempre que um
+sinônimo de "pede valor" ainda não catalogado aparece — e explicou por quê estruturalmente:
+dos 5 tipos de filtro (`distrito`/`contratada`/`contratante`/`statusVigencia`/`valor`),
+`valor` é o único detectado por **vocabulário aberto** (lista de sinônimos) em vez de um
+**conjunto fechado** (os outros vêm do banco ou têm só 2 formas gramaticais) — por isso só
+ele precisou de correção 5 vezes seguidas.
+
+### A correção: marcador gramatical de contagem, não lista de palavras
+
+Em português, "quant**os**/quant**as**" (plural) é a forma inequívoca de pedir uma
+**contagem**; "quant**o**/quant**a**" (singular) é a forma de pedir um **valor** ("quanto
+custa", "quanto foi gasto") — o oposto exato. Em vez de continuar tentando reconhecer toda
+palavra que pede dinheiro, as intenções que só sabem **contar** (nunca somar em R$) e cujo
+gatilho é amplo demais (ex.: só "contratos" + "distrito", sem exigir nenhuma palavra de
+contagem) passam a exigir também "quantos"/"quantas"/"quais" na pergunta —
+`exigeMarcadorDeContagem` no objeto `Intencao`, checado centralmente em `tentarIntencao()`,
+no mesmo padrão de `filtrosSuportados`. Isso fecha qualquer sinônimo de "pede valor", **já
+catalogado ou não**, porque deixa de depender de reconhecer a palavra específica.
+
+Aplicada a 13 intenções cujo uso real no gabarito já inclui essa palavra (não regride nada
+testado): `contratos_paralisados`, `obras_por_contratada`, `contratos_aguardando_os`,
+`contratos_por_distrito`, `contratos_por_contratante`, `processos_em_tramitacao`,
+`processos_por_empresa`, `total_obras_execucao`, `total_processos_geral`,
+`total_aditivos_geral`, `aditivos_por_tipo`, `obras_sem_fiscal`,
+`contratos_percentual_aditivo_alto`. Duas intenções ficaram de fora — `contratos_vencendo`
+("Contratos vencendo no próximo mês", estilo tópico, sem "quantos/quantas/quais" no
+gabarito) e `obras_prazo_execucao_encerrando` (mesmo estilo, sem cobertura de gabarito) —
+essas continuam protegidas só pela lista de vocabulário (`PALAVRAS_PEDIDO_DE_VALOR`), que
+permanece como segunda camada de defesa para os casos onde o marcador gramatical não é
+aplicável e para as 13 intenções tocadas (nada foi removido, só adicionado).
+
+Reverificado: `deno check` limpo; scripts de teste — **33/33** casos-alvo (incluindo os 8
+vazamentos desta rodada, mais 2 sinônimos propositalmente NÃO catalogados — "quantia",
+"recursos" — para confirmar que a proteção não depende mais de listar palavra por palavra) e
+**48/48** no gabarito completo.
+
 ## Fora do escopo desta leva
 
 - Chegar aos 40–60 previstos no README — ficou em 34 (+70% sobre as 20 originais).
