@@ -106,13 +106,47 @@ function formatarResultado(linhas: Record<string, unknown>[]): string {
 }
 
 // Grava no log sem nunca derrubar a resposta ao usuário (log é best-effort).
+// F7: devolve o id da linha inserida — os dois caminhos que representam uma
+// resposta de verdade (intenção e Gemini com SQL executado) usam esse id
+// para o front-end poder anexar um voto 👍/👎 depois. null em caso de falha
+// do próprio log (nunca lançado, best-effort igual antes).
 // deno-lint-ignore no-explicit-any
-async function logSeguro(supabase: any, linha: Record<string, unknown>): Promise<void> {
+async function logSeguro(supabase: any, linha: Record<string, unknown>): Promise<number | null> {
   try {
-    await supabase.from("consultas_ia_log").insert(linha);
+    const { data, error } = await supabase.from("consultas_ia_log").insert(linha).select("id").single();
+    if (error) throw error;
+    return data?.id ?? null;
   } catch (e) {
     console.error("Falha ao gravar consultas_ia_log:", e);
+    return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// F7: feedback (👍/👎) sobre uma resposta já dada. Corpo esperado:
+// { tipo: "feedback", logId: number, veredito: "positivo" | "negativo" }.
+// Reaproveita a mesma autenticação da pergunta (JWT real, F1) — só atualiza
+// se o "usuario" da linha do log bater com quem está autenticado agora,
+// para ninguém votar na pergunta de outra pessoa.
+// ---------------------------------------------------------------------------
+// deno-lint-ignore no-explicit-any
+async function registrarFeedback(supabase: any, usuario: string, logId: unknown, veredito: unknown) {
+  if (typeof logId !== "number" || (veredito !== "positivo" && veredito !== "negativo")) {
+    return { ok: false, status: 400, resposta: "Feedback inválido." };
+  }
+  const { data, error } = await supabase
+    .from("consultas_ia_log")
+    .update({ veredito })
+    .eq("id", logId)
+    .eq("usuario", usuario)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    // Ou o id não existe, ou não pertence a este usuário — mesma resposta
+    // nos dois casos, para não revelar se um id de outra pessoa existe.
+    return { ok: false, status: 404, resposta: "Não foi possível registrar o feedback." };
+  }
+  return { ok: true, status: 200, resposta: "Obrigado pelo retorno." };
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +211,16 @@ Deno.serve(async (req: Request) => {
 
   try {
     const corpo = await req.json();
+
+    // ---- F7: feedback sobre uma resposta já dada, não uma pergunta nova ----
+    if (corpo.tipo === "feedback") {
+      const resultado = await registrarFeedback(supabase, usuario, corpo.logId, corpo.veredito);
+      return new Response(JSON.stringify({ resposta: resultado.resposta }), {
+        status: resultado.status,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      });
+    }
+
     pergunta = (corpo.pergunta ?? "").trim();
 
     if (!pergunta) {
@@ -200,7 +244,7 @@ Deno.serve(async (req: Request) => {
     // ---- 1. Tenta o motor de intenções primeiro (rápido, sem custo) ----
     const resultadoIntencao = await tentarIntencao(supabase, pergunta);
     if (resultadoIntencao) {
-      await logSeguro(supabase, {
+      const logId = await logSeguro(supabase, {
         usuario,
         pergunta,
         sql_gerado: `[intenção: ${resultadoIntencao.intencaoId}]`,
@@ -214,6 +258,9 @@ Deno.serve(async (req: Request) => {
           resposta: resultadoIntencao.resposta,
           origem: "intencao",
           grafico: resultadoIntencao.grafico ?? null,
+          // F7: presente só nas respostas que representam uma resposta de
+          // verdade — habilita os botões de 👍/👎 no front-end.
+          logId,
         }),
         { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
       );
@@ -289,7 +336,7 @@ Deno.serve(async (req: Request) => {
     const resposta = formatarResultado(linhas ?? []);
     const grafico = detectarGraficoAutomatico(linhas ?? [], pergunta);
 
-    await logSeguro(supabase, {
+    const logId = await logSeguro(supabase, {
       usuario,
       pergunta,
       sql_gerado: sql,
@@ -301,7 +348,8 @@ Deno.serve(async (req: Request) => {
     // F6: devolve o SQL gerado — o README promete "sempre mostrando o SQL
     // gerado" para o caminho LLM; antes era gerado, validado e executado, mas
     // nunca chegava ao front-end.
-    return new Response(JSON.stringify({ resposta, origem: "gemini", grafico: grafico ?? null, sql }), {
+    // F7: logId habilita os botões de 👍/👎 (só nas respostas de verdade).
+    return new Response(JSON.stringify({ resposta, origem: "gemini", grafico: grafico ?? null, sql, logId }), {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
   } catch (erro) {

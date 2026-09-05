@@ -316,6 +316,26 @@
     margin-top: 10px;
   }
 
+  /* ---------- F7: voto 👍/👎 sobre uma resposta ---------- */
+  .feedback-turno {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .feedback-btn {
+    background: transparent;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    padding: 4px 9px;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.15s ease, border-color 0.15s ease;
+  }
+  .feedback-btn:hover:not(:disabled) { opacity: 1; border-color: var(--accent); }
+  .feedback-btn:disabled { cursor: default; }
+  .feedback-btn-escolhido { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+
   .digitando { display: flex; gap: 4px; padding: 6px 0; }
   .digitando span {
     width: 6px; height: 6px; border-radius: 50%;
@@ -647,7 +667,7 @@
 
   function adicionarTurnoAssistente(
     texto,
-    { erro = false, aviso = false, origem = null, grafico = null, esclarecimento = false, sql = null, sugestoes = null } = {}
+    { erro = false, aviso = false, origem = null, grafico = null, esclarecimento = false, sql = null, sugestoes = null, logId = null } = {}
   ) {
     if (estadoVazio) estadoVazio.remove();
 
@@ -706,6 +726,38 @@
       conteudo.appendChild(bloco);
     }
 
+    // F7: 👍/👎 — só nas respostas de verdade (a Edge Function só manda
+    // logId para intenção e Gemini-com-SQL; esclarecimento/degradação/erro
+    // não têm "uma resposta" pra avaliar, por isso nunca chegam com logId).
+    if (logId != null) {
+      const conteudo = turno.querySelector(".conteudo-assistente");
+      const wrap = document.createElement("div");
+      wrap.className = "feedback-turno";
+      const btnPositivo = document.createElement("button");
+      btnPositivo.type = "button";
+      btnPositivo.className = "feedback-btn";
+      btnPositivo.setAttribute("aria-label", "Resposta útil");
+      btnPositivo.textContent = "👍";
+      const btnNegativo = document.createElement("button");
+      btnNegativo.type = "button";
+      btnNegativo.className = "feedback-btn";
+      btnNegativo.setAttribute("aria-label", "Resposta não ajudou");
+      btnNegativo.textContent = "👎";
+
+      const votar = async (veredito, botaoClicado) => {
+        btnPositivo.disabled = true;
+        btnNegativo.disabled = true;
+        botaoClicado.classList.add("feedback-btn-escolhido");
+        await enviarFeedback(logId, veredito);
+      };
+      btnPositivo.addEventListener("click", () => votar("positivo", btnPositivo));
+      btnNegativo.addEventListener("click", () => votar("negativo", btnNegativo));
+
+      wrap.appendChild(btnPositivo);
+      wrap.appendChild(btnNegativo);
+      conteudo.appendChild(wrap);
+    }
+
     // F6: perguntas de exemplo anexadas a uma mensagem de degradação — clicar
     // já reenvia, sem precisar rolar até os chips fixos do rodapé.
     if (sugestoes && sugestoes.length) {
@@ -739,6 +791,27 @@
 
   function removerDigitando() {
     document.getElementById("turnoDigitando")?.remove();
+  }
+
+  // F7: envia o voto 👍/👎 sobre uma resposta já dada. Falha em silêncio (só
+  // loga no console) — perder um voto não é motivo pra incomodar o usuário
+  // com um erro, o botão já ficou desabilitado/marcado do lado do usuário.
+  async function enviarFeedback(logId, veredito) {
+    try {
+      const token = await obterTokenSessao();
+      if (!token) return;
+      await fetch(EDGE_FUNCTION_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+          "apikey": SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ tipo: "feedback", logId, veredito }),
+      });
+    } catch (e) {
+      console.error("Falha ao enviar feedback:", e);
+    }
   }
 
   async function enviarPergunta(textoOriginal) {
@@ -813,7 +886,7 @@
         // degradação também (não é "análise gerada" de verdade), leva sugestões.
         adicionarTurnoAssistente(dados.resposta, { aviso: true, sugestoes: dados.sugestoes });
       } else {
-        adicionarTurnoAssistente(dados.resposta, { origem: dados.origem, grafico: dados.grafico, sql: dados.sql });
+        adicionarTurnoAssistente(dados.resposta, { origem: dados.origem, grafico: dados.grafico, sql: dados.sql, logId: dados.logId ?? null });
       }
     } catch (e) {
       removerDigitando();
