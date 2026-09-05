@@ -203,16 +203,26 @@ function mencionaValorComoTermoDeDominio(p: string): boolean {
  * própria palavra "valor" — "cust*" (custa/custam/custou/custaram/custo),
  * "gast*" (gasto/gastos/gastou/gastaram), "investid*"/"investiment*"/
  * "investiu"/"investiram"/"investir" (não "investig*" — investigar não tem
- * nada a ver com dinheiro), "preç*", "montante", "soma", e as formas de
- * "valer". Achado do rev-correcao (F5, rodada 4): "montante"/"soma" também
- * escapavam. */
+ * nada a ver com dinheiro), "preç*", "montante", "soma", as formas de
+ * "valer", e substantivos de dinheiro que podem seguir "quantos/quantas"
+ * ("quantos reais", "quantas verbas/despesas/recursos foram...") — achado do
+ * rev-correcao (F5, rodada 6): o marcador gramatical de contagem
+ * (TEM_MARCADOR_DE_CONTAGEM) barra o singular "quanto" mas não previa que o
+ * SUBSTANTIVO depois do plural "quantos/quantas" também pudesse ser sobre
+ * dinheiro, não sobre o assunto da intenção (obras/contratos/processos).
+ * Esta lista (camada 1) vale para TODAS as intenções, inclusive as 2 que não
+ * usam o marcador de contagem — fecha o mesmo risco residual nelas também.
+ * "recursos" tem um risco pequeno e aceito: em tese poderia ser "recurso
+ * administrativo" (recurso/apelação de um processo) em vez de "recursos
+ * financeiros" — na dúvida, cede para o caminho LLM em vez de arriscar uma
+ * contagem errada, o que é sempre o comportamento seguro aqui. */
 // testado contra o texto já normalizado (normalizar() remove acento E
-// cedilha — "preço" vira "preco"), por isso "precos?" sem cedilha aqui. De
-// propósito não aceita "prec" seguido de qualquer coisa (\w*), que pegaria
-// "preciso"/"precisar"/"precisão" (nada a ver com dinheiro) — só o "o(s)"
-// final de "preço(s)".
+// cedilha — "preço" vira "preco", "dotação" vira "dotacao"), por isso as
+// formas sem cedilha/til aqui. De propósito não aceita "prec" seguido de
+// qualquer coisa (\w*), que pegaria "preciso"/"precisar"/"precisão" (nada a
+// ver com dinheiro) — só o "o(s)" final de "preço(s)".
 const PALAVRAS_PEDIDO_DE_VALOR =
-  /\b(cust\w*|gast\w*|investid\w*|investiment\w*|investiu|investiram|investir|precos?|montantes?|somas?|vale|valem|valeu|valeram)\b/;
+  /\b(cust\w*|gast\w*|investid\w*|investiment\w*|investiu|investiram|investir|precos?|montantes?|somas?|vale|valem|valeu|valeram|reais|verbas?|recursos?|despesas?|dotac(ao|oes)|orcamentos?)\b/;
 
 /** "o total de/dos/da/das X" (substantivo, pedindo A SOMA em R$) — não a
  * mesma coisa que "no total"/"ao todo" (advérbio, usado por várias intenções

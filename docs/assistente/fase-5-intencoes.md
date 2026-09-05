@@ -309,6 +309,30 @@ vazamentos desta rodada, mais 2 sinônimos propositalmente NÃO catalogados — 
 "recursos" — para confirmar que a proteção não depende mais de listar palavra por palavra) e
 **48/48** no gabarito completo.
 
+### Correção pós-revisão da rodada 6 — "quantos/quantas" + substantivo de dinheiro
+
+`rev-produto` aprovou (testou 8 sinônimos novos — liquidado, desembolso, onerou, repasse,
+custeio, verba, aporte, subvenção — todos cederam corretamente). `rev-correcao` bloqueou de
+novo, com um achado genuinamente novo, não mais "faltou um sinônimo do jeito antigo": o
+marcador gramatical (`TEM_MARCADOR_DE_CONTAGEM`) barra o singular "quanto" (pede valor), mas
+não previa que o **substantivo depois do plural** "quantos/quantas" também pudesse ser sobre
+dinheiro — "quant**os reais**", "quant**as** verbas/despesas/recursos" são plurais
+gramaticalmente corretos, mas pedem uma soma em R$, não uma contagem de registros. Achado
+reproduzido em 7 das 13 intenções ancoradas na rodada 5, mais o risco residual (já conhecido)
+nas 2 intenções que ficaram de fora do marcador.
+
+Correção: adicionados à lista de vocabulário (camada 1, `PALAVRAS_PEDIDO_DE_VALOR` —
+compartilhada por **todas** as intenções, inclusive as 2 sem marcador de contagem) os
+substantivos de dinheiro do domínio público que podem seguir "quantos/quantas": `reais`,
+`verba(s)`, `recurso(s)`, `despesa(s)`, `dotação/dotações`, `orçamento(s)`. Isso fecha os 7
+vazamentos confirmados e, de brinde, o risco residual das 2 exceções (que dependiam só desta
+camada). Risco aceito conscientemente: "recursos" também pode significar "recurso
+administrativo" (apelação de um processo) em vez de "recursos financeiros" — na dúvida, cede
+para o LLM em vez de arriscar uma contagem errada, que é sempre o comportamento seguro aqui.
+
+Reverificado: `deno check` limpo; scripts de teste — **40/40** casos-alvo (incluindo os 7
+vazamentos desta rodada e os 2 casos das intenções-exceção) e **48/48** no gabarito completo.
+
 ## Fora do escopo desta leva
 
 - Chegar aos 40–60 previstos no README — ficou em 34 (+70% sobre as 20 originais).
