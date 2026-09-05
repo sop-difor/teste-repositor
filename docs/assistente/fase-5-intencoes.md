@@ -333,6 +333,49 @@ para o LLM em vez de arriscar uma contagem errada, que é sempre o comportamento
 Reverificado: `deno check` limpo; scripts de teste — **40/40** casos-alvo (incluindo os 7
 vazamentos desta rodada e os 2 casos das intenções-exceção) e **48/48** no gabarito completo.
 
+### Correção pós-revisão da rodada 7 — fechamento definitivo (decisão do usuário)
+
+`rev-correcao` bloqueou pela 7ª vez seguida, testando de propósito mais 10 substantivos de
+dinheiro do serviço público não catalogados (empenho, liquidação, aporte, subsídio, provisão,
+repasse, desembolso, subvenção, indenização, crédito orçamentário) — **as 10 vazaram**, com
+um agravante: quando o vocabulário falha em reconhecer a palavra, o sistema não cede com
+segurança — ele responde a contagem normalmente, como se a pergunta fosse sobre contagem
+mesmo. A "rede de segurança" só existe quando a detecção funciona; 3 rodadas seguidas (5, 6,
+7) mostraram que uma lista aberta de "palavras que pedem dinheiro" em português nunca
+converge — cada tentativa fechava a leva anterior e abria espaço para a próxima.
+
+**Decisão do usuário, apresentada com 3 caminhos** (continuar catalogando palavras / aceitar
+o risco residual documentado e seguir / fechar de vez tecnicamente): **fechar de vez**.
+
+### A correção definitiva
+
+Troca de perspectiva: em vez de tentar reconhecer toda pergunta que PEDE dinheiro (vocabulário
+aberto, nunca converge), cada intenção-de-contagem passa a declarar explicitamente **qual
+substantivo ela sabe contar** (`marcadorContagemPara(["contrato"])`,
+`marcadorContagemPara(["obra"])` etc. — conjunto FECHADO, o próprio vocabulário do domínio) e
+exige que "quantos/quantas" (ou "quais") venha **colado** nesse substantivo específico — não
+em qualquer lugar da pergunta. "Quantos **empenhos** os contratos do distrito de Crato
+tiveram?" tem "quantos", mas colado em "empenhos", não em "contratos" — não bate mais em
+`contratos_por_distrito`, cede para o LLM, seja qual for a palavra de dinheiro usada, mesmo
+uma nunca vista antes.
+
+Isso substitui o mecanismo da rodada 5 (`TEM_MARCADOR_DE_CONTAGEM`, que só checava se
+"quantos/quantas/quais" apareciam em QUALQUER posição da pergunta — brecha que a rodada 6
+explorou) pelo mesmo padrão declarativo já usado com sucesso em `filtrosSuportados` desde a
+rodada 3: a intenção diz o que sabe fazer, a checagem central impõe isso, e não depende mais
+de listar cada exceção. Aplicado às mesmas 13 intenções da rodada 5. A lista de vocabulário
+(`PALAVRAS_PEDIDO_DE_VALOR`) foi mantida como segunda camada — não porque ainda seja
+necessária para as 13 intenções ancoradas (o mecanismo fechado já cobre tudo, catalogado ou
+não), mas porque é a única proteção das 2 intenções de estilo tópico
+(`contratos_vencendo`/`obras_prazo_execucao_encerrando`), que não têm "quantos/quantas/quais"
+no uso real e por isso não puderam receber o marcador fechado — risco residual restrito a
+essas 2, documentado conscientemente, não uma alegação de cobertura total.
+
+Reverificado: `deno check` limpo; scripts de teste — **50/50** casos-alvo (incluindo os 10
+substantivos de dinheiro da rodada 7, testados sem cadastrar nenhum deles em
+`PALAVRAS_PEDIDO_DE_VALOR`, para provar que o fechamento vem do mecanismo, não de mais uma
+palavra na lista) e **48/48** no gabarito completo.
+
 ## Fora do escopo desta leva
 
 - Chegar aos 40–60 previstos no README — ficou em 34 (+70% sobre as 20 originais).
