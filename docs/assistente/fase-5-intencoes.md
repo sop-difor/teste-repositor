@@ -376,6 +376,30 @@ substantivos de dinheiro da rodada 7, testados sem cadastrar nenhum deles em
 `PALAVRAS_PEDIDO_DE_VALOR`, para provar que o fechamento vem do mecanismo, não de mais uma
 palavra na lista) e **48/48** no gabarito completo.
 
+### Rodada 8 — os dois revisores que bloqueavam aprovam; melhoria de cobertura
+
+`rev-produto` e `rev-correcao` aprovaram a correção da rodada 7. `rev-correcao` testou de
+propósito por mais furos na adjacência (vírgula, ordem invertida, dois substantivos
+ambíguos, os 10 substantivos da rodada 7 de novo) e não achou nenhum — considerou a classe
+fechada para as 13 intenções ancoradas. `rev-produto` aprovou e trouxe um follow-up de
+cobertura (não bloqueante, nunca dá resposta errada): "quantos **são os** contratos..."/
+"quais **são as** obras..." (com cópula no meio) ainda caíam no LLM à toa, porque o marcador
+exigia colamento direto. Corrigido no mesmo commit — `marcadorContagemPara` passou a aceitar
+"é/são/estão" e o artigo entre a interrogativa e o substantivo, mantendo o cuidado de exigir
+fronteira de palavra depois de cada uma (para "é" não absorver a primeira letra de palavras
+como "empenhos").
+
+Risco residual confirmado e mantido consciente (achado do `rev-correcao`, reproduzido de
+propósito): as 2 intenções de estilo tópico (`contratos_vencendo`,
+`obras_prazo_execucao_encerrando`) ainda ignoram um substantivo de dinheiro se a pergunta
+não usar nenhuma das palavras já catalogadas em `PALAVRAS_PEDIDO_DE_VALOR` — ex.: "quantos
+repasses os contratos vão vencer no próximo mês?" ainda responde a intenção errada. Restrito
+a essas 2, documentado, não corrigido nesta leva.
+
+Reverificado: `deno check` limpo; scripts de teste — **54/54** casos-alvo (incluindo a cópula
+"são/estão" e reconfirmação de que "empenhos" continua cedendo) e **48/48** no gabarito
+completo.
+
 ## Fora do escopo desta leva
 
 - Chegar aos 40–60 previstos no README — ficou em 34 (+70% sobre as 20 originais).

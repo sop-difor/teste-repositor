@@ -269,8 +269,15 @@ const PEDE_O_TOTAL_EM_RS = /\bos?\s+tota(l|is)\s+d(e|os|as|o|a)\b/;
  * e documentado, não uma alegação de classe fechada. */
 function marcadorContagemPara(substantivos: string[]): RegExp {
   const alternativas = substantivos.map(escaparRegex).join("|");
+  // Aceita uma cópula/artigo entre a interrogativa e o substantivo ("quantos
+  // SÃO OS contratos...", "quais SÃO AS obras...") — achado do rev-produto
+  // (F5, rodada 8): sem isso, uma pergunta de contagem legítima com cópula
+  // caía no LLM à toa (perda de cobertura, não erro). O `\b` depois de cada
+  // palavra de preenchimento evita que "e" (de "é") absorva por engano a
+  // primeira letra de uma palavra maior, tipo "empenhos".
+  const meio = "(?:\\s+(?:e|s[ãa]o|est[ãa]o|as?|os?)\\b)*\\s+";
   return new RegExp(
-    `\\b(quantos|quantas)\\s+(${alternativas})s?\\b|\\bquais\\s+(as|os)?\\s*(${alternativas})s?\\b`,
+    `\\b(quantos|quantas)${meio}(${alternativas})s?\\b|\\bquais${meio}(${alternativas})s?\\b`,
     "i"
   );
 }
