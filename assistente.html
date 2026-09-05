@@ -277,6 +277,45 @@
     position: relative;
   }
 
+  /* ---------- F6: SQL gerado (recolhível) ---------- */
+  .sql-toggle {
+    display: inline-block;
+    margin-top: 8px;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .sql-toggle:hover { color: var(--accent); }
+
+  .sql-bloco {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--bg-card-usuario);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+  }
+
+  /* ---------- F6: sugestões anexadas a uma mensagem de degradação ---------- */
+  .sugestoes-turno {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
   .digitando { display: flex; gap: 4px; padding: 6px 0; }
   .digitando span {
     width: 6px; height: 6px; border-radius: 50%;
@@ -606,7 +645,10 @@
     }
   }
 
-  function adicionarTurnoAssistente(texto, { erro = false, aviso = false, origem = null, grafico = null, esclarecimento = false } = {}) {
+  function adicionarTurnoAssistente(
+    texto,
+    { erro = false, aviso = false, origem = null, grafico = null, esclarecimento = false, sql = null, sugestoes = null } = {}
+  ) {
     if (estadoVazio) estadoVazio.remove();
 
     const turno = document.createElement("div");
@@ -630,7 +672,7 @@
     } else if (origem && !erro) {
       const badge = document.createElement("span");
       badge.className = "badge-origem";
-      badge.textContent = origem === "intencao" ? "resposta imediata" : "análise gerada";
+      badge.textContent = origem === "intencao" ? "resposta imediata" : "resposta gerada — confira";
       turno.querySelector(".conteudo-assistente").appendChild(badge);
     }
 
@@ -643,6 +685,41 @@
       wrap.innerHTML = `<canvas id="${canvasId}"></canvas>`;
       turno.querySelector(".conteudo-assistente").appendChild(wrap);
       renderizarGrafico(document.getElementById(canvasId), grafico);
+    }
+
+    // F6: SQL gerado, recolhido por padrão — quem quiser conferir clica.
+    if (sql) {
+      const conteudo = turno.querySelector(".conteudo-assistente");
+      const botao = document.createElement("button");
+      botao.type = "button";
+      botao.className = "sql-toggle";
+      botao.textContent = "▸ Ver SQL gerado";
+      const bloco = document.createElement("pre");
+      bloco.className = "sql-bloco";
+      bloco.textContent = sql;
+      bloco.hidden = true;
+      botao.addEventListener("click", () => {
+        bloco.hidden = !bloco.hidden;
+        botao.textContent = bloco.hidden ? "▸ Ver SQL gerado" : "▾ Ocultar SQL gerado";
+      });
+      conteudo.appendChild(botao);
+      conteudo.appendChild(bloco);
+    }
+
+    // F6: perguntas de exemplo anexadas a uma mensagem de degradação — clicar
+    // já reenvia, sem precisar rolar até os chips fixos do rodapé.
+    if (sugestoes && sugestoes.length) {
+      const wrap = document.createElement("div");
+      wrap.className = "sugestoes-turno";
+      for (const pergunta of sugestoes) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip";
+        chip.textContent = pergunta;
+        chip.addEventListener("click", () => enviarPergunta(pergunta));
+        wrap.appendChild(chip);
+      }
+      turno.querySelector(".conteudo-assistente").appendChild(wrap);
     }
 
     conversa.scrollTop = conversa.scrollHeight;
@@ -723,7 +800,7 @@
         adicionarTurnoAssistente(dados.resposta || "Limite de perguntas por hora atingido. Aguarde alguns minutos.", { aviso: true });
       } else if (dados.origem === "degradado") {
         // Caminho LLM falhou — não é erro do sistema, é "não consegui".
-        adicionarTurnoAssistente(dados.resposta || "Não consegui responder a essa pergunta agora. Tente reformular ou use uma sugestão.", { aviso: true });
+        adicionarTurnoAssistente(dados.resposta || "Não consegui responder a essa pergunta agora. Tente reformular ou use uma sugestão.", { aviso: true, sugestoes: dados.sugestoes });
       } else if (!resposta.ok || dados.origem === "erro") {
         adicionarTurnoAssistente(dados.resposta || "Não consegui processar essa pergunta.", { erro: true });
       } else if (dados.precisaEsclarecimento) {
@@ -731,8 +808,12 @@
         // juntar com o que ele disser em seguida.
         esclarecimentoPendente = perguntaParaEnviar;
         adicionarTurnoAssistente(dados.resposta, { esclarecimento: true });
+      } else if (dados.origem === "gemini" && !dados.sql) {
+        // "Fora do escopo": o Gemini respondeu texto, mas não gerou SQL — é
+        // degradação também (não é "análise gerada" de verdade), leva sugestões.
+        adicionarTurnoAssistente(dados.resposta, { aviso: true, sugestoes: dados.sugestoes });
       } else {
-        adicionarTurnoAssistente(dados.resposta, { origem: dados.origem, grafico: dados.grafico });
+        adicionarTurnoAssistente(dados.resposta, { origem: dados.origem, grafico: dados.grafico, sql: dados.sql });
       }
     } catch (e) {
       removerDigitando();

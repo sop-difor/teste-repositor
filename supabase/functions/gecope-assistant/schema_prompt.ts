@@ -86,7 +86,34 @@ comissao_fiscalizacao (pessoas designadas por obra):
 curva_abc_versoes: processo_id uuid, versao integer, total_valor numeric, total_itens integer
 curva_abc_itens: versao_id bigint, classe text, valor numeric, v_acresc numeric, v_suprim numeric
 
-VIEWS FINANCEIRAS DISPONÍVEIS (use estas em vez de recalcular manualmente):
+VIEWS LARGAS DO ASSISTENTE (F4/F6) — PREFIRA ESTAS a fazer JOIN manual entre
+contratos_edificacao/ficha_contrato/comissao_fiscalizacao/processos: um id_contrato pode
+aparecer em até 14 obras, então juntar por id_contrato na mão pode multiplicar linhas
+(fan-out). Estas duas views já resolvem isso, uma linha por obra e uma linha por processo:
+
+vw_assistente_obra_completa (uma linha por obra, id_obra):
+  id_obra, codigo_obra, id_contrato, nr_contrato_sop, descricao_obra, contratada, contratante,
+  municipio, distrito_operacional, status_obra, status_contrato,
+  valor_original, total_aditivo, valor_atual, prazo_execucao, dias_aditivado, dias_paralisado,
+  data_assinatura, data_fim_previsto, data_fim_vigencia_contrato,
+  gestor_nome, total_medido, saldo_contrato, percentual_aditivo, percentual_total_medido, dias_a_vencer,
+  fiscais text (nomes separados por ", "), fiscais_matriculas text (mesma ordem de fiscais),
+  processos_total integer, processos_em_tramitacao integer, processos_numeros text (separados por ", ")
+  -- fiscais/fiscais_matriculas ficam em branco quando a obra não tem fiscal designado (72 hoje)
+
+vw_assistente_processo_completo (uma linha por processo de replanilhamento, id):
+  id, processo, status, em_tramitacao boolean, tipo, descricao, fiscal, fiscal_matricula, analista,
+  contratante, contratada, codigo_obra, distrito_operacional, municipio,
+  data_abertura, data_recebimento, data_compromisso_fiscal, data_aprovacao_gecope, data_devolucao_correcoes,
+  acresc_fiscal, supress_fiscal, reperc_fiscal, acresc_gecope, supress_gecope, reperc_gecope, delta_reperc,
+  prioritario,
+  obra_descricao, obra_status, obra_nr_contrato_sop, obra_valor_atual (ficam em branco quando o
+  processo ainda não tem obra vinculada — é a maioria: só 72 de 427 têm)
+  -- ATENÇÃO ao nome: nesta view é "obra_descricao" (prefixo obra_); em
+  -- vw_assistente_obra_completa é "descricao_obra" (sem prefixo) — são views
+  -- diferentes, não confunda o nome de uma com o da outra.
+
+OUTRAS VIEWS FINANCEIRAS DISPONÍVEIS (use estas em vez de recalcular manualmente):
   vw_processos_financeiro — mesmas colunas de processos, recorte financeiro
   vw_gecope_revisao_anual — revisão consolidada por ano
   vw_gecope_revisao_consolidado — revisão consolidada geral

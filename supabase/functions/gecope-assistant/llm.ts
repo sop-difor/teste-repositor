@@ -22,12 +22,30 @@ const GEMINI_PRAZO_TOTAL_MS = 24000; // teto do caminho LLM inteiro
 export const MSG_DEGRADADO =
   "Não consegui responder a essa pergunta agora. Tente reformular de forma mais simples, ou use uma das perguntas sugeridas.";
 
+// F6: perguntas concretas anexadas à MENSAGEM de degradação (antes, o texto
+// dizia "use uma das perguntas sugeridas" sem anexar nenhuma — o usuário tinha
+// que rolar até os chips estáticos do rodapé). Fixas e curadas (não
+// aleatórias) para o comportamento ficar previsível e testável — todas já
+// respondidas direto pelo motor de intenções (docs/assistente/eval/casos.jsonl).
+export const SUGESTOES_DEGRADACAO = [
+  "Quantos contratos estão paralisados?",
+  "Contratos vencendo no próximo mês",
+  "Qual contrato tem mais aditivos?",
+];
+
+// F6: isolado do laço de fallback para ser testável sem rede (e para
+// eval_run.ts poder imprimir o prompt exato ao depurar um caso que falhou).
+// Puro: mesma pergunta sempre produz o mesmo texto.
+export function construirPromptSql(pergunta: string): string {
+  return `${SCHEMA_PROMPT}\n\nPERGUNTA DO USUÁRIO: ${pergunta}`;
+}
+
 export async function gerarSqlComGemini(pergunta: string): Promise<RespostaModelo> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY não configurada nos secrets da função.");
 
   const corpoRequisicao = JSON.stringify({
-    contents: [{ parts: [{ text: `${SCHEMA_PROMPT}\n\nPERGUNTA DO USUÁRIO: ${pergunta}` }] }],
+    contents: [{ parts: [{ text: construirPromptSql(pergunta) }] }],
     generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
   });
 

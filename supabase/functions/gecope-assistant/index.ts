@@ -25,7 +25,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { tentarIntencao, type DadosGrafico } from "./motor_intencoes.ts";
 import { validarSqlGeminiOuFalhar, type RespostaModelo } from "./guards.ts";
-import { gerarSqlComGemini, MSG_DEGRADADO } from "./llm.ts";
+import { gerarSqlComGemini, MSG_DEGRADADO, SUGESTOES_DEGRADACAO } from "./llm.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*", // restrinja ao domínio do GECOPE em produção
@@ -232,7 +232,7 @@ Deno.serve(async (req: Request) => {
         erro: paraTextoSeguro(erroLlm instanceof Error ? erroLlm.message : erroLlm),
       });
       return new Response(
-        JSON.stringify({ resposta: MSG_DEGRADADO, origem: "degradado" }),
+        JSON.stringify({ resposta: MSG_DEGRADADO, origem: "degradado", sugestoes: SUGESTOES_DEGRADACAO }),
         { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
       );
     }
@@ -255,6 +255,10 @@ Deno.serve(async (req: Request) => {
           resposta: mensagemTexto,
           origem: "gemini",
           precisaEsclarecimento: ehEsclarecimento,
+          // F6: "fora do escopo" também é degradação — mesma lógica de anexar
+          // sugestões concretas em vez de deixar o usuário adivinhar sozinho.
+          // "esclarecimento" não leva sugestões: já pede o detalhe que falta.
+          sugestoes: ehEsclarecimento ? undefined : SUGESTOES_DEGRADACAO,
         }),
         { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
       );
@@ -277,7 +281,7 @@ Deno.serve(async (req: Request) => {
         erro: paraTextoSeguro(erroSql instanceof Error ? erroSql.message : erroSql),
       });
       return new Response(
-        JSON.stringify({ resposta: MSG_DEGRADADO, origem: "degradado" }),
+        JSON.stringify({ resposta: MSG_DEGRADADO, origem: "degradado", sugestoes: SUGESTOES_DEGRADACAO }),
         { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
       );
     }
@@ -294,7 +298,10 @@ Deno.serve(async (req: Request) => {
       linhas_retornadas: linhas?.length ?? 0,
     });
 
-    return new Response(JSON.stringify({ resposta, origem: "gemini", grafico: grafico ?? null }), {
+    // F6: devolve o SQL gerado — o README promete "sempre mostrando o SQL
+    // gerado" para o caminho LLM; antes era gerado, validado e executado, mas
+    // nunca chegava ao front-end.
+    return new Response(JSON.stringify({ resposta, origem: "gemini", grafico: grafico ?? null, sql }), {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
   } catch (erro) {
