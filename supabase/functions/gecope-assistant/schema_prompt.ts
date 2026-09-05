@@ -108,7 +108,7 @@ vw_assistente_processo_completo (uma linha por processo de replanilhamento, id):
   acresc_fiscal, supress_fiscal, reperc_fiscal, acresc_gecope, supress_gecope, reperc_gecope, delta_reperc,
   prioritario,
   obra_descricao, obra_status, obra_nr_contrato_sop, obra_valor_atual (ficam em branco quando o
-  processo ainda não tem obra vinculada — é a maioria: só 72 de 427 têm)
+  processo ainda não tem obra vinculada — é a maioria: só uma minoria tem)
   -- ATENÇÃO ao nome: nesta view é "obra_descricao" (prefixo obra_); em
   -- vw_assistente_obra_completa é "descricao_obra" (sem prefixo) — são views
   -- diferentes, não confunda o nome de uma com o da outra.
