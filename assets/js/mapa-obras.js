@@ -46,13 +46,30 @@ try{
 /* ============================================================
    CONEXÃO COM O SUPABASE
    URL/chave vêm de config.js (window.SUPABASE_URL/KEY), a mesma
-   fonte usada pelo resto do GECOPE — carregue config.js antes
-   deste script. Requer política RLS de leitura (SELECT) para o
-   papel anon nas tabelas abaixo. Se o Supabase estiver inacessível,
-   o painel mostra um erro explícito (showDataError) — não há
-   dataset de demonstração.
+   fonte usada pelo resto do GECOPE — carregue config.js e database.js
+   antes deste script. Plano de permissões por papel (Fase 2): esta
+   página deixou de ser pública — exige sessão do GECOPE. As tabelas
+   abaixo têm RLS de leitura só para usuários autenticados com papel
+   válido (admin/gerente/fiscal/externo); a antiga policy pública
+   (role anon) foi removida (ver sql/fechar_acesso_publico_contratos.sql).
+   Se o Supabase estiver inacessível, ou não houver sessão, o painel
+   mostra um erro explícito (showDataError) — não há dataset de demonstração.
    ============================================================ */
 const SB_URL=window.SUPABASE_URL;
+// Token da sessão logada do GECOPE — usado como Authorization em vez da chave
+// anônima fixa, para que o RLS saiba QUEM está pedindo os dados (antes, todo
+// pedido ia como role anon, então não dava pra restringir por papel no banco).
+// window.sbClient vem de database.js (mesmo cliente do resto do GECOPE, com
+// storage guard e refresh automático). null se não houver sessão ativa.
+let SESSION_TOKEN=null;
+async function obterTokenSessao(){
+  try{
+    for(let i=0;i<20 && !window.sbClient;i++){ await new Promise(r=>setTimeout(r,100)); }
+    if(!window.sbClient) return null;
+    const {data}=await window.sbClient.auth.getSession();
+    return data?.session?.access_token ?? null;
+  }catch{ return null; }
+}
 const SB_KEY=window.SUPABASE_KEY;
 const SB_TABLE='contratos_edificacao';
 const SB_COMISSAO='comissao_fiscalizacao';
@@ -206,7 +223,10 @@ function mapRow(r){
 // (Promise.all), em vez de um `while` sequencial esperando página a página.
 async function fetchTable(tbl,{select='*',filter=''}={}){
   const qs=`select=${encodeURIComponent(select)}${filter?'&'+filter:''}`;
-  const headers={apikey:SB_KEY, Authorization:'Bearer '+SB_KEY};
+  // apikey continua sendo a chave anônima (exigida pelo PostgREST em toda chamada,
+  // mesmo autenticada) — quem identifica o usuário pro RLS é o Authorization,
+  // que agora é o token da sessão logada, não mais a chave anônima.
+  const headers={apikey:SB_KEY, Authorization:'Bearer '+(SESSION_TOKEN||SB_KEY)};
   const PAGE=1000;
   const first=await fetch(`${SB_URL}/rest/v1/${tbl}?${qs}`,{headers:{...headers, Range:`0-${PAGE-1}`, Prefer:'count=exact'}});
   if(!first.ok) throw new Error('HTTP '+first.status+' em '+tbl+' — verifique URL/chave/RLS');
@@ -310,14 +330,39 @@ function setStatus(txt,ok,lastSync){
   const syncEl=document.getElementById('syncTime');
   if(syncEl) syncEl.textContent = ok ? (lastSync ? fmtDateTimeBR(lastSync) : '—') : '— (falha na conexão)';
 }
-function showDataError(msg){
+function showDataError(msg,titulo){
   document.body.classList.remove('boot-loading');
   setStatus('Erro ao carregar dados', false);
   const el=document.getElementById('dataError');
-  if(el){ const m=document.getElementById('dataErrorMsg'); if(m) m.textContent=msg; el.hidden=false; }
+  if(el){
+    const t=document.getElementById('dataErrorTitle'); if(t) t.textContent=titulo||'Não foi possível carregar os dados';
+    const m=document.getElementById('dataErrorMsg'); if(m) m.textContent=msg;
+    // sempre volta ao estado padrão (retry visível, link de login escondido) —
+    // showLoginRequired() é quem inverte isso; sem este reset, um showDataError()
+    // chamado depois de um showLoginRequired() herdaria o botão errado na tela.
+    // Achado do rev-correcao (recheck): busca o botão na hora (document.getElementById),
+    // igual aos outros elementos desta função — showDataError() já é chamado em L43
+    // (falha ao carregar o GeoJSON), antes da constante de módulo _dataErrorRetryBtn
+    // (declarada mais abaixo) existir; ler essa constante aqui lançava
+    // ReferenceError (temporal dead zone) e mascarava o erro real de rede/geo.
+    const retry=document.getElementById('dataErrorRetry'); if(retry) retry.style.display='';
+    const link=document.getElementById('dataErrorLink'); if(link) link.style.display='none';
+    el.hidden=false;
+  }
 }
 const _dataErrorRetryBtn=document.getElementById('dataErrorRetry');
 if(_dataErrorRetryBtn) _dataErrorRetryBtn.onclick=()=>location.reload();
+
+// Achado do rev-produto (Fase 2): "Não foi possível carregar os dados" +
+// "Tentar novamente" é enganoso pra quem simplesmente não está logado —
+// soa como falha técnica, e recarregar não resolve nada sem sessão. Título
+// e botão próprios: some o "Tentar novamente" (não ajuda aqui) e mostra o
+// link de verdade pro Painel Principal.
+function showLoginRequired(msg){
+  showDataError(msg,'Entre no GECOPE para continuar');
+  const retry=document.getElementById('dataErrorRetry'); if(retry) retry.style.display='none';
+  const link=document.getElementById('dataErrorLink'); if(link) link.style.display='inline-block';
+}
 
 // cache de curta duração (sessionStorage) para não refazer o fetch inteiro a cada
 // F5 durante uma apresentação — 5min é curto o bastante pra nunca mostrar dado
@@ -350,6 +395,14 @@ function writeCache(scope,rows,fisc,adit,ficha,medic){
 }
 
 async function loadData(){
+  // Achado do rev-seguranca (Fase 2): esta é a única checagem que vale — o gate no
+  // fim do arquivo é só o caminho "normal" de entrada, mas #btnScope (Carteira
+  // ativa/Histórico completo) chama loadData() direto, síncrono, sem esperar o
+  // gate resolver. Sem este `return` aqui, uma pessoa sem sessão clicando bem
+  // cedo (ou um script automatizado) rodaria loadData() com SESSION_TOKEN ainda
+  // null, caindo no fallback da chave anônima em fetchTable() — reabrindo
+  // exatamente o buraco que esta fase existe para fechar.
+  if(!SESSION_TOKEN){ showLoginRequired('Faça login no GECOPE para consultar o módulo de Contratos.'); return; }
   for(const c in DB.municipios) DB.municipios[c].obras=[];
   invalidateAggCache(); // sem isso, um hover no mapa durante o fetch devolveria contagens da era de filtro anterior
   try{
@@ -2385,7 +2438,13 @@ buildCityState(); rebuildGroupLabels(); buildGroupLayer();
 // aproximação (efeito de entrada suave, tipo câmera chegando no mapa)
 map.fitBounds(fullBounds,{padding:[220,220],animate:false});
 render();
-loadData();   // busca contratos (Supabase); em falha, mostra estado de erro (showDataError)
+// Porta de sessão (plano de permissões por papel, Fase 2): resolve o token e
+// delega pra loadData() — que é quem de fato checa SESSION_TOKEN (mesmo guard
+// vale tanto pra esta chamada inicial quanto pro clique em #btnScope).
+(async()=>{
+  SESSION_TOKEN=await obterTokenSessao();
+  loadData();   // sem sessão, mostra o aviso de login (showLoginRequired); com falha real, showDataError
+})();
 
 // mantém o mapa centralizado apesar de fontes, layout e barra de endereço (mobile)
 function refit(){ if(st.level>=3) fitCity(); else if(st.level===2) fitGroup(); else fitFull(); }

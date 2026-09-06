@@ -1077,6 +1077,7 @@
   border:1px solid rgba(var(--raise-rgb),.08);text-align:center;color:var(--text-bright)}
 .data-error-box h2{margin:0 0 10px;font-size:17px;color:var(--text-brightest)}
 .data-error-box p{margin:0 0 18px;font-size:13.5px;line-height:1.5;color:var(--text-value)}
-.data-error-box button{border:1px solid var(--ng);background:transparent;color:var(--ng);
-  padding:8px 18px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
-.data-error-box button:hover{background:var(--ng);color:var(--bg-header-1)}
+.data-error-box button,.data-error-box .btn-error{border:1px solid var(--ng);background:transparent;color:var(--ng);
+  padding:8px 18px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer;
+  display:inline-block;text-decoration:none}
+.data-error-box button:hover,.data-error-box .btn-error:hover{background:var(--ng);color:var(--bg-header-1)}

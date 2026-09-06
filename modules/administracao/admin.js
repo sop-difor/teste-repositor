@@ -534,6 +534,124 @@
         } catch (e) { alert('Erro ao atualizar cargo: ' + e.message); }
     }
 
+    // --- AUTORIZAÇÕES ESPECIAIS (plano de permissões por papel — Fase 5) ---
+    // Admin concede, pra um usuário específico, uma das 6 permissões abaixo,
+    // sem precisar mudar o papel dele — fica valendo até ser revogada (nunca
+    // expira sozinha). Ver sql/autorizacoes_especiais.sql pra a definição
+    // completa das permissões e das regras de banco que elas destravam.
+    const PERMISSOES_ESPECIAIS = [
+        'financeiro', 'assistente_dados', 'processos_ver_todos',
+        'processos_gravar', 'composicoes_editar_terceiros', 'orcamentos_gravar'
+    ];
+    const ROTULOS_AUTORIZACAO = {
+        financeiro: 'Financeiro',
+        assistente_dados: 'Assistente de Dados',
+        processos_ver_todos: 'Processos: ver todos',
+        processos_gravar: 'Processos: gravar/editar/excluir',
+        composicoes_editar_terceiros: 'Composições: editar/excluir de terceiros',
+        orcamentos_gravar: 'Orçamentos: criar/nova versão/excluir'
+    };
+
+    async function carregarAutorizacoesEspeciais() {
+        const selectUsuario = document.getElementById('autorizacao-usuario');
+        const tbody = document.getElementById('autorizacoes-ativas-table-body');
+        if (!selectUsuario || !tbody) return;
+
+        // Popula o dropdown só uma vez (Admin não aparece: ele já tem acesso total)
+        if (selectUsuario.options.length === 0) {
+            try {
+                const { data: usuarios, error } = await sbClient.from('app_users')
+                    .select('email, nome, sobrenome, full_name, role')
+                    .in('role', ['gerente', 'fiscal', 'externo'])
+                    .order('nome', { ascending: true });
+                if (error) throw error;
+                selectUsuario.innerHTML = (usuarios || []).map(u => {
+                    const nome = (u.nome ? `${u.nome} ${u.sobrenome || ''}`.trim() : (u.full_name || u.email)).toUpperCase();
+                    return `<option value="${escapeHTML(u.email)}">${escapeHTML(nome)} (${u.role}) — ${escapeHTML(u.email)}</option>`;
+                }).join('');
+            } catch (e) {
+                console.error('Erro ao carregar usuários pra autorizações especiais:', e);
+            }
+        }
+
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted small"><div class="spinner-border spinner-border-sm me-2"></div>Carregando...</td></tr>';
+        try {
+            const { data: ativas, error } = await sbClient.from('autorizacoes_especiais')
+                .select('*')
+                .is('revogado_em', null)
+                .order('concedido_em', { ascending: false });
+            if (error) throw error;
+
+            if (!ativas || ativas.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted small">Nenhuma autorização especial concedida.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = ativas.map(a => `
+                <tr>
+                    <td class="ps-4"><div class="small fw-bold">${escapeHTML(a.usuario_email)}</div></td>
+                    <td><span class="badge bg-light text-dark border fw-normal">${escapeHTML(ROTULOS_AUTORIZACAO[a.permissao] || a.permissao)}</span></td>
+                    <td><div class="small text-muted">${escapeHTML(a.concedido_por)}</div></td>
+                    <td><div class="small text-muted">${new Date(a.concedido_em).toLocaleString('pt-BR')}</div></td>
+                    <td class="text-end pe-4">
+                        <button class="btn-action-icon" data-id="${a.id}" onclick="revogarAutorizacao(this.dataset.id)" title="Revogar">
+                            <i class="bi bi-x-circle icon-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger small">Erro ao carregar: ${e.message}</td></tr>`;
+        }
+    }
+
+    async function concederAutorizacoesSelecionadas() {
+        const selectUsuario = document.getElementById('autorizacao-usuario');
+        const email = selectUsuario ? selectUsuario.value : '';
+        if (!email) { alert('Escolha um usuário.'); return; }
+
+        const marcadas = PERMISSOES_ESPECIAIS.filter(p => {
+            const cb = document.getElementById(`autorizacao-${p}`);
+            return cb && cb.checked;
+        });
+        if (marcadas.length === 0) { alert('Marque ao menos uma permissão.'); return; }
+
+        const meuEmail = getCurrentUserEmail();
+        const agora = new Date().toISOString();
+        const linhas = marcadas.map(permissao => ({
+            usuario_email: email,
+            permissao,
+            concedido_por: meuEmail,
+            concedido_em: agora,
+            revogado_por: null,
+            revogado_em: null
+        }));
+
+        try {
+            const { error } = await sbClient.from('autorizacoes_especiais')
+                .upsert(linhas, { onConflict: 'usuario_email,permissao' });
+            if (error) throw error;
+            alert(`Autorização(ões) concedida(s) para ${email}.`);
+            document.querySelectorAll('.autorizacao-checkbox').forEach(cb => cb.checked = false);
+            carregarAutorizacoesEspeciais();
+        } catch (e) {
+            alert('Erro ao conceder autorização: ' + e.message);
+        }
+    }
+
+    async function revogarAutorizacao(id) {
+        if (!confirm('Revogar esta autorização especial?')) return;
+        try {
+            const { error } = await sbClient.from('autorizacoes_especiais')
+                .update({ revogado_em: new Date().toISOString(), revogado_por: getCurrentUserEmail() })
+                .eq('id', id);
+            if (error) throw error;
+            carregarAutorizacoesEspeciais();
+        } catch (e) {
+            alert('Erro ao revogar autorização: ' + e.message);
+        }
+    }
+
     // Notifications polling (admin)
     let _notifIntervalId = null;
     function startNotificationsPoll() { if (_notifIntervalId) return; fetchNotifications(); _notifIntervalId = setInterval(fetchNotifications, 45000); }
@@ -645,6 +763,9 @@
     window.excluirUsuario = excluirUsuario;
     window.filterAdminUsers = filterAdminUsers;
     window.updateUserRole = updateUserRole;
+    window.carregarAutorizacoesEspeciais = carregarAutorizacoesEspeciais;
+    window.concederAutorizacoesSelecionadas = concederAutorizacoesSelecionadas;
+    window.revogarAutorizacao = revogarAutorizacao;
     window.startNotificationsPoll = startNotificationsPoll;
     window.stopNotificationsPoll = stopNotificationsPoll;
     window.fetchPendingCount = fetchPendingCount;

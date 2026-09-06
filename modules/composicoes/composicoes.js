@@ -160,7 +160,12 @@ async function enviarNovaVersaoComposicao() {
         oldHistory.push({ versao: currentData.versao_atual, url: currentData.arquivo_url, data: new Date().toISOString(), motivo: 'Versão arquivada' });
 
         // Update Table
-        await sbClient.from('composicoes_biblioteca').update({
+        // Achado do rev-produto (Fase 4): esta chamada não conferia erro nenhum —
+        // se o banco recusar (ex.: RLS bloqueando quem não é dono/Admin/Gerente),
+        // o código seguia pro alert de sucesso mesmo assim, mostrando "Versão
+        // enviada!" quando na verdade nada foi gravado. Mesmo padrão de checagem
+        // já usado em modules/orcamentos/orcamentos.js (enviarNovaVersao).
+        const { error: updateVersaoError } = await sbClient.from('composicoes_biblioteca').update({
             versao_atual: newVersionLabel,
             arquivo_url: pubUrl.publicUrl,
             arquivo_path: newStoragePath,
@@ -168,13 +173,15 @@ async function enviarNovaVersaoComposicao() {
             status: 'Atualizado',
             created_at: new Date().toISOString()
         }).eq('id', id);
+        if (updateVersaoError) throw updateVersaoError;
 
         if (descricao) {
             // Salvar comentário de sistema
             const { data: curr } = await sbClient.from('composicoes_biblioteca').select('comentarios_revisao').eq('id', id).single();
             const novoArr = curr.comentarios_revisao || [];
             novoArr.unshift({ autor: 'Sistema (Versão)', mensagem: `Gerada versão ${newVersionLabel}: ${descricao}`, data: new Date().toISOString() });
-            await sbClient.from('composicoes_biblioteca').update({ comentarios_revisao: novoArr }).eq('id', id);
+            const { error: comentarioSistemaError } = await sbClient.from('composicoes_biblioteca').update({ comentarios_revisao: novoArr }).eq('id', id);
+            if (comentarioSistemaError) throw comentarioSistemaError;
         }
 
         alert(`Versão ${newVersionLabel} de Composição enviada! Arquivos de comentários resolvidos foram limpos.`);

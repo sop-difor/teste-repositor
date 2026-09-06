@@ -10,8 +10,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <!-- Supabase: mesmo cliente/sessão do restante do GECOPE (config.js define URL/chave,
      database.js inicializa window.sbClient reaproveitando a sessão já autenticada).
-     A integração completa (link no index.html, tema unificado) é a F8; a F1 só faz o
-     assistente exigir uma sessão real do GECOPE em vez da anon key crua. -->
+     F8: link no Painel Principal (index.html) e tema unificado (gecope_theme) — feito.
+     A F1 fez o assistente exigir uma sessão real do GECOPE em vez da anon key crua. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script src="database.js"></script>
@@ -49,6 +49,17 @@
   }
 
   * { box-sizing: border-box; }
+
+  /* F8 (achado do usuário): barra de rolagem padronizada com o resto do
+     GECOPE (style.css) — fina, trilha transparente, cor conforme o tema. */
+  :root { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.22) transparent; }
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.22); border-radius: 999px; }
+  *::-webkit-scrollbar-thumb:hover { background-color: rgba(0,0,0,0.4); }
+  html[data-theme="escuro"] { scrollbar-color: rgba(255,255,255,0.22) transparent; }
+  html[data-theme="escuro"] *::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.22); }
+  html[data-theme="escuro"] *::-webkit-scrollbar-thumb:hover { background-color: rgba(255,255,255,0.4); }
 
   html, body {
     margin: 0;
@@ -96,6 +107,10 @@
   }
 
   .btn-tema { margin-left: auto; }
+
+  /* F8 (achado do usuário): brasão do Estado, mesmo arquivo usado em
+     index.html/gecope_mapa_obras.html. */
+  .marca-estado { height: 28px; width: auto; flex-shrink: 0; }
 
   .topbar-titulo h1 {
     font-size: 15px;
@@ -277,6 +292,36 @@
     position: relative;
   }
 
+  /* ---------- F8: tabela de verdade (caminho da IA, achado do usuário) ---------- */
+  .tabela-resultado-wrap {
+    margin-top: 12px;
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+  }
+  .tabela-resultado {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    white-space: nowrap;
+  }
+  .tabela-resultado th, .tabela-resultado td {
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .tabela-resultado th {
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-card-usuario);
+  }
+  .tabela-resultado tr:last-child td { border-bottom: none; }
+  .tabela-nota {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin: 6px 2px 0;
+  }
+
   /* ---------- F6: SQL gerado (recolhível) ---------- */
   .sql-toggle {
     display: inline-block;
@@ -409,6 +454,7 @@
       <a href="index.html" class="voltar" aria-label="Voltar">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </a>
+      <img src="assets/brasao.png" alt="Brasão do Estado do Ceará" class="marca-estado">
       <div class="topbar-titulo">
         <h1>Assistente de Dados</h1>
         <p>GECOPE · processos, contratos e aditivos</p>
@@ -433,16 +479,16 @@
   <div class="conversa" id="conversa">
     <div class="conversa-interna" id="conversaInterna">
       <div class="estado-vazio" id="estadoVazio">
+        <!-- F8 (achado do usuário): este era um espaço reservado desde antes
+             da F8, esperando o caminho real do brasão (ver comentário
+             original, removido depois de preenchido) — só ninguém tinha
+             ligado ao arquivo de verdade até agora. -->
         <img
-          src="logo-estado-ceara.png"
-          alt="Governo do Estado do Ceará"
+          src="assets/brasao.png"
+          alt="Brasão do Estado do Ceará"
           class="logo-estado-vazio"
           onerror="this.style.display='none'"
         >
-        <!-- Troque o "src" acima pelo caminho real do brasão/logotipo do
-             Estado já usado no restante do GECOPE (ex: assets/brasao-ceara.png).
-             Se o arquivo não for encontrado, a imagem some sozinha (onerror)
-             em vez de quebrar o layout com um ícone de imagem faltando. -->
         <h2 id="saudacaoVazio">Olá.</h2>
         <p>Pergunte sobre processos, contratos e aditivos do GECOPE.</p>
       </div>
@@ -487,9 +533,14 @@
   }
 
   // ---------------------------------------------------------------------
-  // Tema claro/escuro — ver nota sobre alinhar com o resto do GECOPE
+  // Tema claro/escuro — F8: usa a MESMA chave/convenção do resto do GECOPE
+  // (index.html, gecope_mapa_obras.html: localStorage "gecope_theme",
+  // valores "dark"/"light") em vez de uma chave própria — antes disso, o
+  // assistente podia abrir claro mesmo com o resto do GECOPE em escuro.
+  // Internamente esta página usa data-theme="escuro"/"claro" (CSS já
+  // escrito assim), então a conversão só acontece na leitura/escrita.
   // ---------------------------------------------------------------------
-  const CHAVE_TEMA = "gecope-tema";
+  const CHAVE_TEMA_GECOPE = "gecope_theme";
   const ICONE_LUA = `<path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>`;
   const ICONE_SOL = `<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round"/>`;
   const btnTema = document.getElementById("btnTema");
@@ -498,9 +549,10 @@
   function aplicarTema(tema) {
     document.documentElement.dataset.theme = tema;
     iconeTema.innerHTML = tema === "escuro" ? ICONE_SOL : ICONE_LUA;
-    localStorage.setItem(CHAVE_TEMA, tema);
+    localStorage.setItem(CHAVE_TEMA_GECOPE, tema === "escuro" ? "dark" : "light");
   }
-  aplicarTema(localStorage.getItem(CHAVE_TEMA) ?? (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "escuro" : "claro"));
+  const temaSalvo = localStorage.getItem(CHAVE_TEMA_GECOPE);
+  aplicarTema(temaSalvo ? (temaSalvo === "dark" ? "escuro" : "claro") : (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "escuro" : "claro"));
   btnTema.addEventListener("click", () => {
     aplicarTema(document.documentElement.dataset.theme === "escuro" ? "claro" : "escuro");
   });
@@ -511,8 +563,13 @@
     noite: ["Boa noite", "Boa noite, gestor", "Uma boa noite pra você"],
   };
 
+  // F8: nome real do usuário logado — mesma chave (sop_user_name) que o
+  // restante do GECOPE grava no login (core/auth.js) e usa para saudação/
+  // autoria (core/shell.js, modules/*). Antes disso, dependia de
+  // window.currentUser, que nunca era preenchido nesta página — a saudação
+  // sempre caía no genérico "gestor".
   function obterPrimeiroNome() {
-    const nomeCompleto = window.currentUser?.nome ?? "";
+    const nomeCompleto = sessionStorage.getItem("sop_user_name") ?? "";
     if (!nomeCompleto) return null;
     return nomeCompleto.trim().split(/\s+/)[0];
   }
@@ -563,8 +620,14 @@
   // ---------------------------------------------------------------------
   // F1: porta de sessão. Sem sessão do GECOPE (nunca teve, ou expirou no meio),
   // o assistente não funciona — desabilita entrada + chips e explica, com um
-  // caminho clicável. A integração plena (redirecionar para o login, herdar o
-  // nome do usuário no cabeçalho) é a F8.
+  // caminho clicável.
+  // F8: nome do usuário no cabeçalho (saudação) resolvido — ver
+  // obterPrimeiroNome() acima. Redirecionar automaticamente para o login foi
+  // avaliado e descartado por decisão de manter consistência com o resto do
+  // GECOPE: nenhum outro módulo (ex.: gecope_mapa_obras.html) faz esse
+  // redirect — todos assumem que, se a sessão expirou, a mensagem com link
+  // "Abra o Painel Principal" abaixo já resolve sem esconder a página atrás
+  // de uma navegação forçada.
   // ---------------------------------------------------------------------
   let sessaoOk = false;
   const PLACEHOLDER_PADRAO = campoTexto.getAttribute("placeholder");
@@ -598,13 +661,59 @@
     sugestoes.querySelectorAll(".chip").forEach((c) => c.classList.remove("chip-off"));
   }
 
+  // Chamada quando o usuário está com sessão válida, mas o papel dele não é
+  // Admin — diferente de fecharPorSessao() (que sugere fazer login de novo),
+  // aqui o login está OK, só falta permissão. Mensagem própria pra não
+  // confundir quem está logado corretamente.
+  function fecharPorPermissao() {
+    travarEntrada();
+    campoTexto.placeholder = "Disponível apenas para administradores";
+    const alvo = document.getElementById("saudacaoVazio");
+    if (alvo && !alvo.dataset.sessaoAviso) {
+      alvo.dataset.sessaoAviso = "1";
+      alvo.textContent = "Acesso restrito a administradores";
+      const p = alvo.nextElementSibling;
+      if (p) p.innerHTML = 'O Assistente de Dados está disponível apenas para administradores. Volte ao <a href="index.html" style="color:var(--accent)">Painel Principal</a>.';
+    }
+  }
+
   // começa travado (sem mostrar o aviso ainda) até confirmar a sessão —
   // evita "flash" de UI funcional para quem está deslogado.
   travarEntrada();
   (async function portaDeSessaoInicial() {
     const token = await obterTokenSessao();
-    if (token) abrirPorSessao();
-    else fecharPorSessao();
+    if (!token) { fecharPorSessao(); return; }
+    // Checagem de papel no front é só UX (evita deixar a pessoa digitar pra
+    // descobrir que não pode) — a trava de verdade é a Edge Function, que
+    // recusa 403 independentemente do que essa checagem local concluir.
+    // Consulta o papel direto no banco (não sessionStorage): esta página pode
+    // ser aberta numa aba nova sem ter passado pelo login do index.html nesta
+    // mesma aba, e sessionStorage não é compartilhado entre abas — só o token
+    // do Supabase (via localStorage) é. Falha para "sem permissão" por padrão.
+    let papel = "";
+    let temAutorizacaoExtra = false;
+    try {
+      const { data: { session } } = await window.sbClient.auth.getSession();
+      const email = session?.user?.email;
+      if (email) {
+        const { data: perfil } = await window.sbClient.from("app_users").select("role").eq("email", email).maybeSingle();
+        papel = (perfil?.role || "").toLowerCase();
+        if (papel !== "admin") {
+          // Plano de permissões por papel (Fase 5): Admin pode conceder acesso
+          // ao Assistente pra alguém específico sem mudar o papel dela.
+          const { data: autorizacao } = await window.sbClient
+            .from("autorizacoes_especiais")
+            .select("id")
+            .eq("permissao", "assistente_dados")
+            .ilike("usuario_email", email)
+            .is("revogado_em", null)
+            .maybeSingle();
+          temAutorizacaoExtra = !!autorizacao;
+        }
+      }
+    } catch { /* mantém papel vazio — fails safe pra "sem permissão" abaixo */ }
+    if (papel === "admin" || temAutorizacaoExtra) abrirPorSessao();
+    else fecharPorPermissao();
   })();
 
   function adicionarTurnoUsuario(texto) {
@@ -619,11 +728,16 @@
 
   function renderizarTabelaFallback(container, grafico) {
     container.style.height = "auto";
+    // F8 (achado do rev-aderencia, ao comparar com renderizarTabelaResultado):
+    // rotulo/titulo podem vir de texto livre do banco (nome de empresa,
+    // distrito etc.) — escapar antes de injetar em innerHTML, mesmo cuidado
+    // já aplicado na tabela de resultados da IA. valores é sempre number
+    // (Chart.js exige), não precisa escapar.
     const linhasTabela = grafico.rotulos
-      .map((rotulo, i) => `<tr><td>${rotulo}</td><td style="text-align:right; font-variant-numeric: tabular-nums;">${grafico.valores[i].toLocaleString("pt-BR")}</td></tr>`)
+      .map((rotulo, i) => `<tr><td>${escaparHtml(rotulo)}</td><td style="text-align:right; font-variant-numeric: tabular-nums;">${grafico.valores[i].toLocaleString("pt-BR")}</td></tr>`)
       .join("");
     container.innerHTML = `
-      <p style="font-size:12.5px; color:var(--text-tertiary); margin:0 0 8px;">${grafico.titulo}</p>
+      <p style="font-size:12.5px; color:var(--text-tertiary); margin:0 0 8px;">${escaparHtml(grafico.titulo)}</p>
       <table style="width:100%; border-collapse:collapse; font-size:14px;">${linhasTabela}</table>
     `;
     container.querySelectorAll("tr").forEach((tr) => {
@@ -667,9 +781,42 @@
     }
   }
 
+  // F8: escapa antes de montar HTML de tabela — nomes de coluna/valores vêm
+  // do banco (descrições de obra, nomes de empresa etc.), nunca confiar sem
+  // escapar antes de injetar em innerHTML.
+  function escaparHtml(valor) {
+    return String(valor).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // Achado do rev-seguranca (F8, recheck): o ternário abaixo só produz um dos
+  // dois literais fixos "right"/"left" — nunca interpola tabela.alinhamentos[i]
+  // diretamente dentro do atributo style="...". É isso que torna seguro
+  // montar esse atributo via template string mesmo sem escapar; não trocar
+  // por uma interpolação direta do valor sem repensar essa garantia.
+  function renderizarTabelaResultado(container, tabela) {
+    const cabecalho = tabela.colunas
+      .map((c, i) => `<th style="text-align:${tabela.alinhamentos[i] === "direita" ? "right" : "left"}">${escaparHtml(c)}</th>`)
+      .join("");
+    const corpo = tabela.linhas
+      .map((linha) => "<tr>" + linha
+        .map((v, i) => `<td style="text-align:${tabela.alinhamentos[i] === "direita" ? "right" : "left"}">${escaparHtml(v ?? "—")}</td>`)
+        .join("") + "</tr>")
+      .join("");
+    const wrap = document.createElement("div");
+    wrap.className = "tabela-resultado-wrap";
+    wrap.innerHTML = `<table class="tabela-resultado"><thead><tr>${cabecalho}</tr></thead><tbody>${corpo}</tbody></table>`;
+    container.appendChild(wrap);
+    if (tabela.nota) {
+      const nota = document.createElement("p");
+      nota.className = "tabela-nota";
+      nota.textContent = tabela.nota;
+      container.appendChild(nota);
+    }
+  }
+
   function adicionarTurnoAssistente(
     texto,
-    { erro = false, aviso = false, origem = null, grafico = null, esclarecimento = false, sql = null, sugestoes = null, logId = null } = {}
+    { erro = false, aviso = false, origem = null, grafico = null, esclarecimento = false, sql = null, sugestoes = null, logId = null, tabela = null } = {}
   ) {
     if (estadoVazio) estadoVazio.remove();
 
@@ -684,7 +831,10 @@
       ${avatar}
       <div class="conteudo-assistente${classeExtra}"></div>
     `;
-    turno.querySelector(".conteudo-assistente").textContent = texto;
+    // F8: quando há tabela, mostra só o título ("N resultado(s) encontrado(s):")
+    // como texto — a lista que viria a seguir é a própria tabela, exibida
+    // abaixo; sem isso, o mesmo conteúdo apareceria duas vezes (texto + tabela).
+    turno.querySelector(".conteudo-assistente").textContent = tabela?.titulo ?? texto;
 
     if (esclarecimento) {
       const badge = document.createElement("span");
@@ -707,6 +857,11 @@
       wrap.innerHTML = `<canvas id="${canvasId}"></canvas>`;
       turno.querySelector(".conteudo-assistente").appendChild(wrap);
       renderizarGrafico(document.getElementById(canvasId), grafico);
+    }
+
+    // F8: tabela de verdade (caminho da IA) — ver renderizarTabelaResultado.
+    if (tabela && tabela.linhas?.length) {
+      renderizarTabelaResultado(turno.querySelector(".conteudo-assistente"), tabela);
     }
 
     // F6: SQL gerado, recolhido por padrão — quem quiser conferir clica.
@@ -896,6 +1051,14 @@
           dados.resposta || "Sua sessão do GECOPE expirou. Entre novamente e recarregue esta página.",
           { aviso: true }
         );
+      } else if (resposta.status === 403 || dados.origem === "permissao") {
+        // Sessão válida, mas o papel do usuário não autoriza este módulo —
+        // trava com a mensagem certa (não é "sessão expirou").
+        fecharPorPermissao();
+        adicionarTurnoAssistente(
+          dados.resposta || "O Assistente de Dados está disponível apenas para administradores.",
+          { aviso: true }
+        );
       } else if (resposta.status === 429 || dados.origem === "limite") {
         adicionarTurnoAssistente(dados.resposta || "Limite de perguntas por hora atingido. Aguarde alguns minutos.", { aviso: true });
       } else if (dados.origem === "degradado") {
@@ -913,7 +1076,7 @@
         // degradação também (não é "análise gerada" de verdade), leva sugestões.
         adicionarTurnoAssistente(dados.resposta, { aviso: true, sugestoes: dados.sugestoes });
       } else {
-        adicionarTurnoAssistente(dados.resposta, { origem: dados.origem, grafico: dados.grafico, sql: dados.sql, logId: dados.logId ?? null });
+        adicionarTurnoAssistente(dados.resposta, { origem: dados.origem, grafico: dados.grafico, tabela: dados.tabela ?? null, sql: dados.sql, logId: dados.logId ?? null });
       }
     } catch (e) {
       removerDigitando();

@@ -105,6 +105,81 @@ function formatarResultado(linhas: Record<string, unknown>[]): string {
   return `${cabecalho}\n${linhasFormatadas}${sufixo}`;
 }
 
+// ---------------------------------------------------------------------------
+// F8 (achado do usuário, ao testar o piloto ao vivo): o caminho do Gemini já
+// tem os dados em linhas/colunas antes de virar texto — dá pra montar uma
+// tabela de verdade (colunas alinhadas) em vez de só uma lista de "•" corrida.
+// Alinhamento à direita quando a coluna é só números (ou nula) em todas as
+// linhas visíveis; senão, à esquerda. Não reformata números em geral (nada de
+// toLocaleString aqui) — um ano como 2024 viraria "2.024", errado; é só
+// alinhamento de coluna, os valores continuam exatamente os que vieram do
+// banco — EXCETO colunas monetárias (ver ehColunaMonetaria abaixo), que viram
+// "R$ 1.234,56" porque o usuário pediu essa formatação explicitamente e não
+// há ambiguidade: no schema, toda coluna com "valor" ou "saldo" no nome é
+// dinheiro (schema_dicionario.md). Escopo desta fase: só o caminho do Gemini
+// (linhas/colunas já estruturadas) — o motor de intenções tem 34 respostas
+// escritas à mão, fica para uma leva futura dedicada, evitando reabrir a área
+// mais testada do projeto (F5) sem uma rodada de revisão própria.
+// ---------------------------------------------------------------------------
+type TabelaResultado = {
+  colunas: string[];
+  alinhamentos: ("esquerda" | "direita")[];
+  linhas: unknown[][];
+  titulo: string;
+  nota: string | null;
+};
+
+const LINHAS_TABELA_EXIBIDAS = 20;
+
+// Todas as colunas monetárias do schema têm "valor" ou "saldo" no nome
+// (valor_atual, valor_original, valor_aprovado, valor_repercussao,
+// valor_supressao, valor_medido, saldo_contrato, obra_valor_atual, valor);
+// nenhuma coluna não-monetária tem esses termos no nome (percentual_aditivo,
+// execucao_aprovado etc. não batem). Não usar "total_"/"acresc_"/"supress_"/
+// "reperc_" aqui — essas existem tanto para valores em R$ quanto, potencialmente,
+// para contagens, então ficam fora do escopo desta heurística por segurança.
+function ehColunaMonetaria(coluna: string): boolean {
+  const nome = coluna.toLowerCase();
+  return nome.includes("valor") || nome.includes("saldo");
+}
+
+const FORMATADOR_MOEDA = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+});
+
+function formatarCelula(valor: unknown, coluna: string): unknown {
+  if (typeof valor === "number" && ehColunaMonetaria(coluna)) {
+    return FORMATADOR_MOEDA.format(valor);
+  }
+  return valor;
+}
+
+function construirTabela(linhas: Record<string, unknown>[]): TabelaResultado | null {
+  if (linhas.length < 2) return null;
+  const colunas = Object.keys(linhas[0]);
+  if (colunas.length === 0) return null;
+
+  const alinhamentos = colunas.map((c): "esquerda" | "direita" =>
+    linhas.every((l) => l[c] === null || l[c] === undefined || typeof l[c] === "number") ? "direita" : "esquerda"
+  );
+
+  const capAtingido = linhas.length === 200 || linhas.length === 500;
+  const titulo = capAtingido
+    ? `Mais de ${linhas.length} resultados (limite do sistema — refine a pergunta ou peça um total/contagem):`
+    : `${linhas.length} resultado(s) encontrado(s):`;
+
+  return {
+    colunas,
+    alinhamentos,
+    linhas: linhas
+      .slice(0, LINHAS_TABELA_EXIBIDAS)
+      .map((l) => colunas.map((c) => formatarCelula(l[c] ?? null, c))),
+    titulo,
+    nota: linhas.length > LINHAS_TABELA_EXIBIDAS ? `... e mais ${linhas.length - LINHAS_TABELA_EXIBIDAS} linha(s).` : null,
+  };
+}
+
 // Grava no log sem nunca derrubar a resposta ao usuário (log é best-effort).
 // F7: devolve o id da linha inserida — os dois caminhos que representam uma
 // resposta de verdade (intenção e Gemini com SQL executado) usam esse id
@@ -208,6 +283,35 @@ Deno.serve(async (req: Request) => {
     );
   }
   usuario = user.email ?? user.id;
+
+  // ---- 0a. Autorização: Assistente de Dados é só para Admin, ou para quem
+  // recebeu a autorização especial "assistente_dados" em Administração (plano
+  // de permissões por papel — Fases 2 e 5). O client acima usa a
+  // SERVICE_ROLE_KEY, que ignora RLS, então esta é a única trava real; o
+  // front-end só esconde o card, não protege a função em si. ----
+  const { data: perfilAcesso } = await supabase
+    .from("app_users")
+    .select("role")
+    .eq("email", user.email ?? "")
+    .maybeSingle();
+  const ehAdmin = (perfilAcesso?.role ?? "").toLowerCase() === "admin";
+  let temAutorizacaoExtra = false;
+  if (!ehAdmin) {
+    const { data: autorizacao } = await supabase
+      .from("autorizacoes_especiais")
+      .select("id")
+      .eq("permissao", "assistente_dados")
+      .ilike("usuario_email", user.email ?? "")
+      .is("revogado_em", null)
+      .maybeSingle();
+    temAutorizacaoExtra = !!autorizacao;
+  }
+  if (!ehAdmin && !temAutorizacaoExtra) {
+    return new Response(
+      JSON.stringify({ resposta: "O Assistente de Dados está disponível apenas para administradores.", origem: "permissao" }),
+      { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    );
+  }
 
   try {
     const corpo = await req.json();
@@ -342,6 +446,9 @@ Deno.serve(async (req: Request) => {
 
     const resposta = formatarResultado(linhas ?? []);
     const grafico = detectarGraficoAutomatico(linhas ?? [], pergunta);
+    // F8: tabela de verdade quando há mais de uma linha — resposta continua
+    // completa (com a lista em texto) para quem/o que não usar a tabela.
+    const tabela = construirTabela(linhas ?? []);
 
     const logId = await logSeguro(supabase, {
       usuario,
@@ -356,9 +463,10 @@ Deno.serve(async (req: Request) => {
     // gerado" para o caminho LLM; antes era gerado, validado e executado, mas
     // nunca chegava ao front-end.
     // F7: logId habilita os botões de 👍/👎 (só nas respostas de verdade).
-    return new Response(JSON.stringify({ resposta, origem: "gemini", grafico: grafico ?? null, sql, logId }), {
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ resposta, origem: "gemini", grafico: grafico ?? null, tabela: tabela ?? null, sql, logId }),
+      { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    );
   } catch (erro) {
     // Erro inesperado (corpo malformado, intenção lançou, etc.) — os caminhos
     // esperados de falha do LLM já degradam acima com origem "degradado".

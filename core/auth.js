@@ -178,6 +178,34 @@ async function signInWithEmail(email, password, opts = {}) {
         } else {
             sessionStorage.removeItem('sop_user_name');
         }
+
+        // Plano de permissões por papel (Fase 3): matrícula própria, usada em
+        // modules/processos/processos.js pra filtrar "meus processos" pelo
+        // vínculo estável (fiscal_matricula) em vez de comparar nome — já vem
+        // no profile.data (select('*') acima), só faltava guardar.
+        if (profile.data && profile.data.matricula) {
+            sessionStorage.setItem('sop_matricula', String(profile.data.matricula));
+        } else {
+            sessionStorage.removeItem('sop_matricula');
+        }
+
+        // Plano de permissões por papel (Fase 5): autorizações especiais que o
+        // Admin concedeu pra este usuário específico (sem mudar o papel dele).
+        // Guarda só as chaves das permissões ATIVAS (revogado_em IS NULL) — o
+        // resto do app checa com temAutorizacao('chave'), sem precisar saber
+        // que isso vem de uma tabela à parte.
+        try {
+            const { data: autorizacoes } = await sbClient
+                .from('autorizacoes_especiais')
+                .select('permissao')
+                .ilike('usuario_email', email)
+                .is('revogado_em', null);
+            sessionStorage.setItem('sop_autorizacoes', JSON.stringify((autorizacoes || []).map(a => a.permissao)));
+        } catch (e) {
+            console.warn('[WARN] Falha ao buscar autorizações especiais:', e);
+            sessionStorage.setItem('sop_autorizacoes', '[]');
+        }
+
         applyRoleToUI(role);
 
         // Esconde landing
@@ -200,6 +228,8 @@ async function signOutUser() {
     sessionStorage.removeItem('sop_user');
     sessionStorage.removeItem('sop_role');
     sessionStorage.removeItem('sop_user_name');
+    sessionStorage.removeItem('sop_matricula');
+    sessionStorage.removeItem('sop_autorizacoes');
     // Exibe landing novamente
     toggleLanding(true);
     // Atualiza UI
@@ -229,17 +259,21 @@ function applyRoleToUI(rawRole) {
     }
 
     // 1. Visibilidade de Abas e Tiles por Atributo data-roles
-    // -> cards iniciais devem permanecer visíveis para todos os papéis;
-    //    a lógica de restrição de acesso é tratada no showPane() e em cada função.
+    // -> um card/linha SEM data-roles continua sempre visível pra todos os papéis (não
+    //    entra neste querySelectorAll); a restrição desses fica só em showPane()/cada função.
+    //    Já um card/linha COM data-roles (ex.: Financeiro, Curva ABC) precisa respeitar o
+    //    atributo de verdade — do contrário fica visível pra quem não tem acesso, e o clique
+    //    morre silenciosamente em showPane() sem nenhum aviso (achado do rev-produto, Fase 1).
     document.querySelectorAll('[data-roles]').forEach(el => {
-        if (el.classList.contains('home-action-card') || el.classList.contains('home-list-row')) {
-            // sempre mostra o tile/linha (layout flex); a restrição de acesso é tratada no showPane()
-            el.style.setProperty('display', 'flex', 'important');
-            return;
-        }
+        const isCard = el.classList.contains('home-action-card') || el.classList.contains('home-list-row');
         const allowed = el.getAttribute('data-roles').split(',');
-        if (allowed.includes(role)) {
-            el.style.setProperty('display', 'block', 'important');
+        // Fase 5: elemento com data-autorizacao="chave" também aparece pra quem
+        // recebeu essa autorização especial, mesmo com papel fora de data-roles
+        // (ex.: Fiscal com "financeiro" concedido individualmente vê o card).
+        const autorizacaoExtra = el.getAttribute('data-autorizacao');
+        const temExtra = autorizacaoExtra && typeof temAutorizacao === 'function' && temAutorizacao(autorizacaoExtra);
+        if (allowed.includes(role) || temExtra) {
+            el.style.setProperty('display', isCard ? 'flex' : 'block', 'important');
         } else {
             el.style.setProperty('display', 'none', 'important');
         }
@@ -271,6 +305,14 @@ function applyRoleToUI(rawRole) {
         if (el.id !== 'btn-nova-comp-analitica') {
             el.style.display = (role === 'admin') ? '' : 'none';
         }
+    });
+
+    // 2b. Elementos .admin-gerente-only (ações de Orçamentos: Novo/Nova Versão/
+    // Excluir) — hoje só existem pra Orçamentos, então checar a autorização
+    // "orcamentos_gravar" aqui é seguro (Fase 5: libera pra quem recebeu essa
+    // autorização especial, mesmo sendo Fiscal/Externo).
+    document.querySelectorAll('.admin-gerente-only').forEach(el => {
+        el.style.display = (role === 'admin' || role === 'gerente' || temAutorizacao('orcamentos_gravar')) ? '' : 'none';
     });
 
     // 3. Botões Específicos
@@ -356,6 +398,22 @@ async function refreshUserRole() {
 }
 
 /**
+ * Plano de permissões por papel (Fase 5): verifica se o usuário logado tem
+ * uma autorização especial concedida pelo Admin (tela de Administração), sem
+ * precisar mudar o papel dele. Lista fechada de chaves — ver
+ * sql/autorizacoes_especiais.sql para a lista completa e o que cada uma libera.
+ * @param {string} chave - ex: 'processos_gravar', 'composicoes_editar_terceiros'
+ */
+function temAutorizacao(chave) {
+    try {
+        const lista = JSON.parse(sessionStorage.getItem('sop_autorizacoes') || '[]');
+        return Array.isArray(lista) && lista.includes(chave);
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Verifica se o usuario é proprietário de uma composição/orçamento
  * @param {Object} item - O item (composição ou orçamento)
  * @returns {boolean} - True se o usuário é o dono
@@ -377,12 +435,13 @@ function isItemOwner(item) {
 
 /**
  * Verifica se o usuário pode editar uma composição
- * Regra: Admin pode editar todas. Gerente/Fiscal/Externo podem editar apenas suas próprias
+ * Regra: Admin e Gerente podem editar todas. Fiscal/Externo podem editar apenas as próprias
  */
 function canEditComposition(item) {
     const role = getCurrentUserRole();
-    if (role === 'admin') return true;
-    if (['gerente', 'fiscal', 'externo'].includes(role)) {
+    if (role === 'admin' || role === 'gerente') return true;
+    if (temAutorizacao('composicoes_editar_terceiros')) return true;
+    if (['fiscal', 'externo'].includes(role)) {
         return isItemOwner(item);
     }
     return false;
@@ -390,12 +449,14 @@ function canEditComposition(item) {
 
 /**
  * Verifica se o usuário pode deletar uma composição
- * Regra: Admin pode deletar todas. Gerente/Fiscal/Externo podem deletar apenas suas próprias
+ * Regra: Admin e Gerente podem deletar todas. Fiscal/Externo podem deletar apenas as próprias
+ * (ou qualquer uma, se tiverem a autorização especial "composicoes_editar_terceiros")
  */
 function canDeleteComposition(item) {
     const role = getCurrentUserRole();
-    if (role === 'admin') return true;
-    if (['gerente', 'fiscal', 'externo'].includes(role)) {
+    if (role === 'admin' || role === 'gerente') return true;
+    if (temAutorizacao('composicoes_editar_terceiros')) return true;
+    if (['fiscal', 'externo'].includes(role)) {
         return isItemOwner(item);
     }
     return false;
@@ -403,11 +464,12 @@ function canDeleteComposition(item) {
 
 /**
  * Verifica se o usuário pode ver ações em processos (botões de ação)
- * Regra: Apenas Admin e Gerente. Fiscal e Externo não podem ver
+ * Regra: Admin e Gerente. Fiscal/Externo também, se tiverem a autorização
+ * especial "processos_gravar" (concedida individualmente em Administração).
  */
 function canSeeProcessActions() {
     const role = getCurrentUserRole();
-    return ['admin', 'gerente'].includes(role);
+    return ['admin', 'gerente'].includes(role) || temAutorizacao('processos_gravar');
 }
 
 /**

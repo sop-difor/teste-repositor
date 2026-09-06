@@ -1098,7 +1098,14 @@ async function carregarDadosSupabase() {
                     }
                 }
             }
-            if (pendingMeta.length > 0) {
+            // Achado do rev-correcao (Fase 4): meta é só-Admin no banco agora (RLS) —
+            // pra qualquer outro papel, o UPDATE abaixo seria recusado silenciosamente
+            // (a Promise resolve com {error}, não lança), e o código continuaria dizendo
+            // "metas automáticas salvas" e gravando isso no histórico como se tivesse
+            // funcionado. Em vez de tentar e mascarar a falha, só tenta persistir quando
+            // for Admin — pros demais papéis, o cálculo em memória acima já mostra a meta
+            // sugerida na tela (só não fica salva até um Admin abrir o painel).
+            if (pendingMeta.length > 0 && getCurrentUserRole() === 'admin') {
                 // Persistir no banco (em paralelo)
                 await Promise.all(pendingMeta.map(u => sbClient.from('processos').update({ data_compromisso_fiscal: u.data_compromisso_fiscal }).eq('id', u.id)));
                 console.log(`[AutoMeta] metas automáticas salvas: ${pendingMeta.length}`);
@@ -2128,6 +2135,13 @@ function getMetaDate(row, setD) {
 
         const valSupabase = setD ? setD.toISOString().substring(0, 10) : null;
 
+        // Achado do rev-produto (Fase 4): guarda o valor anterior pra poder
+        // desfazer a atualização otimista abaixo — se o banco recusar (RLS:
+        // meta é só-Admin), a tela não pode continuar mostrando a meta como
+        // alterada quando na verdade não foi gravada.
+        const valorAnteriorLS = localStorage.getItem(key);
+        const dataAnterior = row.dataCompromissoFiscal;
+
         if (!setD) localStorage.removeItem(key);
         else localStorage.setItem(key, valSupabase);
 
@@ -2139,6 +2153,15 @@ function getMetaDate(row, setD) {
             .eq('id', row.id)
             .select('id')
             .then(({ data: updData, error }) => {
+                if (error || !updData || updData.length === 0) {
+                    // Desfaz a atualização otimista: sem isso, a tela continuaria
+                    // mostrando a meta nova mesmo o banco tendo recusado a gravação.
+                    if (valorAnteriorLS) localStorage.setItem(key, valorAnteriorLS);
+                    else localStorage.removeItem(key);
+                    row.dataCompromissoFiscal = dataAnterior;
+                    alert('Não foi possível salvar a meta: ' + (error ? error.message : 'nenhum processo foi atualizado.'));
+                    if (typeof updateReuniao === 'function') updateReuniao();
+                }
                 if (error) {
                     console.error('[ERRO] Falha ao sincronizar meta na base de dados: ', error.message);
                 } else if (!updData || updData.length === 0) {
@@ -2244,6 +2267,7 @@ async function setPrioritario(processo, isPriority) {
 
     // 1. Atualizar imediatamente em memória (feedback visual instantâneo)
     const row = (window.allData || []).find(d => d.processo === processo);
+    const prioridadeAnterior = row ? row.prioritario : undefined;
     if (row) row.prioritario = isPriority;
 
     // 2. Realizar comunicação com o Supabase nos bastidores (Background Sync)
@@ -2255,7 +2279,12 @@ async function setPrioritario(processo, isPriority) {
 
         if (error) {
             console.error('[ERRO] Falha ao marcar processo prioritário: ', error.message);
-            alert("Aviso: Falha de conexão ao salvar status prioritário nas nuvens.");
+            // Achado do rev-produto (Fase 4): a mensagem fixa "falha de conexão"
+            // mascarava a causa real (ex.: RLS recusando por não ser Admin) —
+            // mostra o erro de verdade, e desfaz a atualização otimista da linha 2263.
+            if (row) row.prioritario = prioridadeAnterior;
+            alert('Não foi possível salvar o status prioritário: ' + error.message);
+            if (typeof updateReuniao === 'function') updateReuniao();
         } else {
             // Registrar atividade: Admin marcou/desmarcou prioridade
             try {
@@ -2455,11 +2484,37 @@ function updateReuniao() {
         });
     }
 
-    if (uRole === 'fiscal') {
+    // Fase 5: Fiscal com a autorização especial "processos_ver_todos" concedida
+    // pelo Admin pula o recorte por vínculo — vê todos os processos e o filtro
+    // por fiscal aparece pra ele, igual admin/gerente/externo (cai no `else`).
+    const fiscalRestrito = uRole === 'fiscal'
+        && !(typeof temAutorizacao === 'function' && temAutorizacao('processos_ver_todos'));
+
+    if (fiscalRestrito) {
+        // Plano de permissões por papel (Fase 3): prioriza o vínculo por matrícula
+        // (processos.fiscal_matricula <-> app_users.matricula), mais confiável que
+        // comparar nome — mas só quando os DOIS lados têm matrícula preenchida.
+        // Nem todo processo tem fiscal_matricula gravado ainda (achado do usuário
+        // ao aprovar esta troca): quando falta de um dos lados, cai de volta pro
+        // casamento por nome de sempre, pra não esconder processos de quem só
+        // tem o vínculo antigo (por nome).
+        const uMatricula = (sessionStorage.getItem('sop_matricula') || '').trim().toUpperCase();
         const nameParts = uName.trim().split(/[\s\.\-]+/).filter(p => p.length > 0);
         rows = rows.filter(d => {
             const dFiscal = (d.fiscal || "").toUpperCase().trim();
             const dFiscalNormalizado = dFiscal.replace(/[\.\-]+/g, ' ').trim();
+            if (uMatricula && d.fiscalMatricula) {
+                const bate = String(d.fiscalMatricula).trim().toUpperCase() === uMatricula;
+                // Achado do rev-produto (Fase 3): diagnóstico barato pro piloto — se a
+                // matrícula não bateu mas o nome bateria (jeito antigo), a matrícula do
+                // processo provavelmente está dessincronizada do cadastro do fiscal.
+                // Não muda o resultado (matrícula continua tendo prioridade), só ajuda a
+                // investigar rápido se alguém reclamar "sumiu um processo".
+                if (!bate && (dFiscalNormalizado === uName || nameParts.every(part => dFiscalNormalizado.includes(part)))) {
+                    console.warn(`[permissões] Processo ${d.processo}: fiscal_matricula (${d.fiscalMatricula}) não bate com a matrícula logada (${uMatricula}), mas o nome bateria — confira o cadastro.`);
+                }
+                return bate;
+            }
             if (dFiscalNormalizado === uName) return true;
             if (nameParts.every(part => dFiscalNormalizado.includes(part))) return true;
             const dFiscalParts = dFiscalNormalizado.split(/\s+/).filter(p => p.length > 0);
@@ -2728,7 +2783,8 @@ function updateReuniao() {
         const labelDias = diasNoStatus <= 0 ? "Hoje" : (diasNoStatus === 1 ? "1 dia" : `${diasNoStatus} dias`);
 
         // Preparar botões de ação para evitar aninhamento de template strings
-        const canEdit = ['admin', 'gerente'].includes(uRole);
+        // Fase 5: também libera pra quem recebeu a autorização especial "processos_gravar"
+        const canEdit = ['admin', 'gerente'].includes(uRole) || (typeof temAutorizacao === 'function' && temAutorizacao('processos_gravar'));
         const btnDetalhes = canEdit ? `<button class="btn btn-sm btn-light border" onclick="abrirDetalhes('${escapeHTML(d.processo)}')" title="Ver detalhes"><i class="bi bi-eye-fill" style="color: var(--sop-blue);"></i></button>` : '';
 
         // Link para o SUITE (NUP apenas números para evitar 404)

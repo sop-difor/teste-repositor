@@ -49,6 +49,21 @@
             display: flex !important;
         }
 
+        /* Regras de Visibilidade: Admin + Gerente (ex.: ações de Orçamentos) */
+        .admin-gerente-only {
+            display: none !important;
+        }
+
+        body.role-admin .admin-gerente-only,
+        body.role-gerente .admin-gerente-only {
+            display: inline-block !important;
+        }
+
+        body.role-admin .home-action-card.admin-gerente-only,
+        body.role-gerente .home-action-card.admin-gerente-only {
+            display: flex !important;
+        }
+
         /* Regra para esconder elementos do Fiscal */
         body.role-fiscal .hide-fiscal {
             display: none !important;

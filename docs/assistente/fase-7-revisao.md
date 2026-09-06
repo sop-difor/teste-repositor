@@ -39,13 +39,27 @@ LGPD/dado de produção.
 | FU-F7-1 | `rev-produto` | Sem filtro por período/exportação no painel — fora do escopo pedido para a F7 | Se o piloto (F8) pedir |
 | FU-F7-2 | `rev-seguranca` | Reavaliar se o painel deveria checar cargo/permissão, não só login | F8, quando definir quem administra o assistente |
 
+## Recheck pontual pós-follow-up (pg_cron + rate limit no feedback)
+
+O job `pg_cron` de purga e o reposicionamento do `limiteExcedido` (commit `486f884`) foram
+adicionados depois da aprovação inicial dos 4 revisores — por envolver LGPD/dado de
+produção, passou por uma checagem extra (só `rev-seguranca` e `rev-correcao`, os dois
+cujo escopo cobre o achado) antes de publicar.
+
+| Lente | Veredito | Resumo |
+|---|---|---|
+| `rev-correcao` | **APROVADO** | Testou `cron.schedule` ao vivo com nome de teste (idempotente, não duplica), testou o `DELETE` em transação com rollback (0 linhas hoje — tabela nova), conferiu os blocos E/F do SQL e o rollback, `deno check` limpo nos dois arquivos. |
+| `rev-seguranca` | **APROVADO** | O job roda como `postgres`, que tem `rolbypassrls = true` — é esse atributo, não a `FORCE ROW LEVEL SECURITY`, que decide se o `DELETE` funciona; testado ao vivo em transação com rollback. Condição de data é `timestamptz` vs `timestamptz` (sem ambiguidade de fuso). `cron.schedule` é idempotente pelo nome (`UNIQUE (jobname, username)` em `cron.job`, testado 2x ao vivo). Mover `limiteExcedido` para antes do feedback fecha a lacuna anterior sem novo risco (`registrarFeedback` já filtra por `usuario`). |
+
+Sem achados bloqueantes nos dois. **F7 publicada em produção em 05/09/2026** — ver
+`README.md` para versões exatas.
+
 ## Situação
 
-**F7 concluída, 4/4 APROVADO.** 👍/👎 nas respostas de verdade; painel de uso/falhas numa
-página nova; rotina documentada para transformar o que se repete em intenção (F5) ou caso
-de eval (F3); purga automática de 180 dias cumprindo a promessa de LGPD da F1.
-
-Ainda não publicada em produção — ver `README.md` para o estado de deploy.
+**F7 concluída, 4/4 APROVADO, e publicada em produção (05/09/2026).** 👍/👎 nas respostas
+de verdade; painel de uso/falhas numa página nova; rotina documentada para transformar o
+que se repete em intenção (F5) ou caso de eval (F3); purga automática de 180 dias
+cumprindo a promessa de LGPD da F1, já rodando via `pg_cron`.
 
 Próximo: **F8** — `assistente.html` atrás da auth plena do GECOPE, liberar para o piloto,
 com sign-off do usuário.

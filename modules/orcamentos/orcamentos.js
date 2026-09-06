@@ -407,12 +407,12 @@ async function carregarOrcamentos() {
                         </div>
                         <div class="orcamento-actions">
                             <a href="${escapeHTML(obra.arquivo_url)}" target="_blank" rel="noopener noreferrer" class="btn-action-baixar" title="Baixar Arquivo"><i class="bi bi-download"></i> Baixar</a>
-                            <!-- Nova Versão: APENAS ADMIN -->
-                            <button class="btn btn-action-icon admin-only" onclick="prepararNovaVersao(${obra.id})" title="Nova Versão"><i class="bi bi-cloud-arrow-up-fill icon-cloud"></i></button>
+                            <!-- Nova Versão: ADMIN E GERENTE -->
+                            <button class="btn btn-action-icon admin-gerente-only" onclick="prepararNovaVersao(${obra.id})" title="Nova Versão"><i class="bi bi-cloud-arrow-up-fill icon-cloud"></i></button>
                             <!-- Comentário: VISÍVEL PARA TODOS -->
                             <button class="btn btn-action-icon" onclick="prepararComentario(${obra.id})" title="Adicionar Comentário"><i class="bi bi-chat-left-text-fill text-warning"></i></button>
-                            <!-- Excluir: APENAS ADMIN E NO FISCAL -->
-                            <button class="btn btn-action-icon admin-only" onclick="deletarOrcamento(${obra.id}, '${obra.arquivo_path}')"><i class="bi bi-trash-fill icon-trash"></i></button>
+                            <!-- Excluir: ADMIN E GERENTE -->
+                            <button class="btn btn-action-icon admin-gerente-only" onclick="deletarOrcamento(${obra.id}, '${obra.arquivo_path}')"><i class="bi bi-trash-fill icon-trash"></i></button>
                         </div>
                     </div>
                     ${containerHistorico}

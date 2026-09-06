@@ -150,14 +150,23 @@
 
 <div class="data-error" id="dataError" hidden>
   <div class="data-error-box">
-    <h2>Não foi possível carregar os dados</h2>
+    <h2 id="dataErrorTitle">Não foi possível carregar os dados</h2>
     <p id="dataErrorMsg"></p>
     <button id="dataErrorRetry">Tentar novamente</button>
+    <!-- Fase 2 (permissões): achado do rev-produto — "Painel Principal" não pode
+         ser só texto (showDataError usa textContent); sem sessão, esta é a única
+         saída da tela, então precisa ser um link de verdade. Escondido por
+         padrão; showLoginRequired() troca qual dos dois botões aparece. -->
+    <a id="dataErrorLink" class="btn-error" href="index.html" style="display:none">Voltar ao Painel Principal</a>
   </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="config.js"></script>
+<!-- Plano de permissões por papel (Fase 2): esta página exige sessão do GECOPE
+     agora — precisa do mesmo cliente Supabase autenticado do resto do app. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="database.js"></script>
 <script src="assets/js/mapa-obras.js" defer></script>
 </body>
 </html>

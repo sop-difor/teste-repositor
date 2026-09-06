@@ -354,9 +354,9 @@
             <ul class="nav nav-tabs mb-3 d-none" id="dashboardTabs" role="tablist">
                 <li class="nav-item" data-roles="admin,gerente,fiscal,externo,guest"><button class="nav-link"
                         data-bs-target="#pane-home" data-bs-toggle="tab">Início</button></li>
-                <li class="nav-item" data-roles="admin,gerente,fiscal"><button class="nav-link"
+                <li class="nav-item" data-roles="admin" data-autorizacao="financeiro"><button class="nav-link"
                         data-bs-target="#pane-financeiro" data-bs-toggle="tab">Financeiro</button></li>
-                <li class="nav-item" data-roles="admin,gerente,fiscal"><button class="nav-link"
+                <li class="nav-item" data-roles="admin,gerente,fiscal,externo"><button class="nav-link"
                         data-bs-target="#pane-curva-abc" data-bs-toggle="tab">Curva ABC</button></li>
                 <li class="nav-item" data-roles="admin,gerente,fiscal,externo"><button class="nav-link"
                         data-bs-target="#pane-reuniao" data-bs-toggle="tab">Processos</button></li>
@@ -461,14 +461,14 @@
                                 <i class="bi bi-chevron-right"></i>
                             </div>
                             <!-- Curva ABC -->
-                            <div class="home-list-row" data-pane="pane-curva-abc" data-roles="admin,gerente,fiscal"
+                            <div class="home-list-row" data-pane="pane-curva-abc" data-roles="admin,gerente,fiscal,externo"
                                 onclick="showPane('pane-curva-abc')">
                                 <div class="home-action-icon bg-purple"><i class="bi bi-pie-chart"></i></div>
                                 <div class="home-list-row-title">Curva ABC</div>
                                 <i class="bi bi-chevron-right"></i>
                             </div>
                             <!-- Painel Financeiro -->
-                            <div class="home-list-row" data-pane="pane-financeiro" data-roles="admin,gerente,fiscal"
+                            <div class="home-list-row" data-pane="pane-financeiro" data-roles="admin" data-autorizacao="financeiro"
                                 onclick="showPane('pane-financeiro')">
                                 <div class="home-action-icon bg-teal"><i class="bi bi-currency-dollar"></i></div>
                                 <div class="home-list-row-title">Financeiro</div>
@@ -487,11 +487,19 @@
                                 <i class="bi bi-chevron-right"></i>
                             </div>
                             <!-- Contratos -->
-                            <div class="home-list-row" onmouseenter="prefetchPagina('gecope_mapa_obras.html')"
+                            <div class="home-list-row" data-roles="admin,gerente,fiscal,externo" onmouseenter="prefetchPagina('gecope_mapa_obras.html')"
                                 onclick="window.location.href='gecope_mapa_obras.html'"
                                 title="Abrir o painel interativo do GECOPE">
                                 <div class="home-action-icon bg-green"><i class="bi bi-map"></i></div>
                                 <div class="home-list-row-title">Contratos</div>
+                                <i class="bi bi-chevron-right"></i>
+                            </div>
+                            <!-- Assistente de Dados (F8) -->
+                            <div class="home-list-row" data-roles="admin" data-autorizacao="assistente_dados" onmouseenter="prefetchPagina('assistente.html')"
+                                onclick="window.location.href='assistente.html'"
+                                title="Perguntar em linguagem natural sobre contratos, obras, processos e aditivos">
+                                <div class="home-action-icon bg-indigo"><i class="bi bi-robot"></i></div>
+                                <div class="home-list-row-title">Assistente de Dados</div>
                                 <i class="bi bi-chevron-right"></i>
                             </div>
                         </div>
@@ -648,6 +656,93 @@
                                                 <tr>
                                                     <td colspan="7" class="text-center py-4 text-muted small">Carregando
                                                         usuários...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AUTORIZAÇÕES ESPECIAIS (plano de permissões por papel — Fase 5) -->
+                        <div class="card admin-accordion-card">
+                            <div class="admin-section-header" role="button" data-bs-toggle="collapse"
+                                data-bs-target="#collapseAutorizacoes" aria-expanded="false"
+                                onclick="if (typeof carregarAutorizacoesEspeciais === 'function') carregarAutorizacoesEspeciais()">
+                                <div class="admin-section-header-left">
+                                    <div class="admin-section-icon" style="background:var(--sop-orange, #f59e0b);"><i
+                                            class="bi bi-key-fill"></i></div>
+                                    <span class="admin-section-name">Autorizações Especiais</span>
+                                </div>
+                                <i class="bi bi-chevron-down text-muted"></i>
+                            </div>
+
+                            <div id="collapseAutorizacoes" class="collapse">
+                                <div class="card-body bg-light p-3">
+                                    <div class="small text-muted fw-bold mb-3"><i class="bi bi-info-circle me-1"></i>
+                                        Conceda uma permissão extra pra um usuário específico, sem mudar o perfil
+                                        dele. Fica valendo até você revogar.
+                                    </div>
+
+                                    <div class="card border-0 shadow-sm p-3 mb-4" style="border-radius: 12px;">
+                                        <div class="row g-3">
+                                            <div class="col-md-5">
+                                                <label class="form-label small fw-bold">Usuário</label>
+                                                <select id="autorizacao-usuario" class="form-select"></select>
+                                            </div>
+                                            <div class="col-md-7">
+                                                <label class="form-label small fw-bold">Permissões</label>
+                                                <div class="d-flex flex-column gap-1">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input autorizacao-checkbox" type="checkbox" value="financeiro" id="autorizacao-financeiro">
+                                                        <label class="form-check-label small" for="autorizacao-financeiro">Acesso ao módulo Financeiro</label>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input autorizacao-checkbox" type="checkbox" value="assistente_dados" id="autorizacao-assistente_dados">
+                                                        <label class="form-check-label small" for="autorizacao-assistente_dados">Acesso ao Assistente de Dados</label>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input autorizacao-checkbox" type="checkbox" value="processos_ver_todos" id="autorizacao-processos_ver_todos">
+                                                        <label class="form-check-label small" for="autorizacao-processos_ver_todos">Processos: ver todos (não só os vinculados)</label>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input autorizacao-checkbox" type="checkbox" value="processos_gravar" id="autorizacao-processos_gravar">
+                                                        <label class="form-check-label small" for="autorizacao-processos_gravar">Processos: gravar/editar/excluir (igual Gerente)</label>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input autorizacao-checkbox" type="checkbox" value="composicoes_editar_terceiros" id="autorizacao-composicoes_editar_terceiros">
+                                                        <label class="form-check-label small" for="autorizacao-composicoes_editar_terceiros">Composições: editar/excluir de qualquer pessoa</label>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input autorizacao-checkbox" type="checkbox" value="orcamentos_gravar" id="autorizacao-orcamentos_gravar">
+                                                        <label class="form-check-label small" for="autorizacao-orcamentos_gravar">Orçamentos: criar/nova versão/excluir (igual Gerente)</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="text-end mt-3">
+                                            <button class="btn btn-success fw-bold btn-sm" onclick="concederAutorizacoesSelecionadas()">
+                                                <i class="bi bi-check-lg me-1"></i> Conceder Selecionadas
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="small text-muted fw-bold mb-2">Autorizações ativas</div>
+                                    <div class="proc-table-wrap" style="max-height: 40vh; overflow-y: auto;">
+                                        <table class="table align-middle mb-0 bg-white w-100">
+                                            <thead>
+                                                <tr>
+                                                    <th class="ps-4">Usuário</th>
+                                                    <th>Permissão</th>
+                                                    <th>Concedido por</th>
+                                                    <th>Em</th>
+                                                    <th class="text-end pe-4">Ações</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="autorizacoes-ativas-table-body">
+                                                <tr>
+                                                    <td colspan="5" class="text-center py-4 text-muted small">Abra
+                                                        esta seção pra carregar.</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -2120,7 +2215,7 @@
                                 <div style="color:var(--text-muted);font-size:0.98rem;">Biblioteca de orçamentos por
                                     categoria, com histórico de revisões e versões.</div>
                             </div>
-                            <button class="btn btn-success fw-bold shadow-sm admin-only"
+                            <button class="btn btn-success fw-bold shadow-sm admin-gerente-only"
                                 style="font-size: 0.85rem; height: 40px;" data-bs-toggle="modal"
                                 data-bs-target="#modalNovoOrcamento">
                                 <i class="bi bi-plus-lg me-1"></i> Novo Orçamento
